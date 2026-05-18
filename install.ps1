@@ -394,6 +394,74 @@ function Set-PathPrependBeforeGit {
     }
 }
 
+# Ensure $PathToAdd is on the User PATH (appended if absent). No Machine PATH,
+# no admin required, no positioning logic. Used for new installs that do not
+# get the git wrapper — the goal is only that `git-ai` itself is discoverable.
+function Set-PathEnsureContains {
+    param(
+        [Parameter(Mandatory = $true)][string]$PathToAdd
+    )
+
+    $sep = ';'
+
+    function NormalizePath2([string]$p) {
+        try { return ([IO.Path]::GetFullPath($p.Trim())).TrimEnd('\\').ToLowerInvariant() }
+        catch { return ($p.Trim()).TrimEnd('\\').ToLowerInvariant() }
+    }
+
+    $normalizedAdd = NormalizePath2 $PathToAdd
+
+    try {
+        $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+        $entries = @()
+        if ($userPath) { $entries = ($userPath -split $sep) | Where-Object { $_ -and $_.Trim() -ne '' } }
+        $alreadyPresent = $false
+        foreach ($e in $entries) {
+            if ((NormalizePath2 $e) -eq $normalizedAdd) { $alreadyPresent = $true; break }
+        }
+        if ($alreadyPresent) {
+            $userStatus = 'AlreadyPresent'
+        } else {
+            $newUserPath = if ($userPath) { "$userPath$sep$PathToAdd" } else { $PathToAdd }
+            [Environment]::SetEnvironmentVariable('Path', $newUserPath, 'User')
+            $userStatus = 'Updated'
+        }
+    } catch {
+        $userStatus = 'Error'
+    }
+
+    # Update current process PATH immediately for this session
+    try {
+        $procPath = $env:PATH
+        $procEntries = @()
+        if ($procPath) { $procEntries = ($procPath -split $sep) | Where-Object { $_ -and $_.Trim() -ne '' } }
+        $procHas = $false
+        foreach ($e in $procEntries) {
+            if ((NormalizePath2 $e) -eq $normalizedAdd) { $procHas = $true; break }
+        }
+        if (-not $procHas) {
+            $env:PATH = if ($procPath) { "$procPath$sep$PathToAdd" } else { $PathToAdd }
+        }
+    } catch { }
+
+    return [PSCustomObject]@{
+        UserStatus    = $userStatus
+        MachineStatus = 'Skipped'
+    }
+}
+
+# Returns $true when ~/.git-ai/bin already contains an existing git-ai wrapper
+# install — i.e. both git.exe and git-ai.exe are present. New installs intentionally
+# do not create the wrapper; only existing users get it refreshed on upgrade.
+function Test-ExistingGitAiWrapper {
+    param(
+        [Parameter(Mandatory = $true)][string]$InstallDir
+    )
+    $gitExe = Join-Path $InstallDir 'git.exe'
+    $gitAiExe = Join-Path $InstallDir 'git-ai.exe'
+    return (Test-Path -LiteralPath $gitExe) -and (Test-Path -LiteralPath $gitAiExe)
+}
+
 # Detect standard Git early and validate (fail-fast behavior)
 $stdGitPath = Get-StdGitPath
 
@@ -428,6 +496,13 @@ if (-not [string]::IsNullOrWhiteSpace($env:GIT_AI_LOCAL_BINARY)) {
 
 # Install directory: %USERPROFILE%\.git-ai\bin
 $installDir = Join-Path $HOME ".git-ai\bin"
+
+# Capture whether this is an existing-wrapper upgrade BEFORE we create the install
+# directory or write any new files. Wrapper artifacts (git.exe, git-og.cmd, the
+# PATH-prepend that forces our shim before any system git entry) are only
+# refreshed for users who already had them — new installs do not get them.
+$existingWrapper = Test-ExistingGitAiWrapper -InstallDir $installDir
+
 New-Item -ItemType Directory -Force -Path $installDir | Out-Null
 
 Write-Host ("Downloading git-ai (release: {0})..." -f $releaseTag)
@@ -499,24 +574,28 @@ if (Test-Path -LiteralPath $finalExe) {
 Move-Item -Force -Path $tmpFile -Destination $finalExe
 try { Unblock-File -Path $finalExe -ErrorAction SilentlyContinue } catch { }
 
-# Create a shim so calling `git` goes through git-ai by PATH precedence
-$gitShim = Join-Path $installDir 'git.exe'
+if ($existingWrapper) {
+    # Refresh wrapper artifacts for users who already had them. New installs
+    # intentionally skip this — git-ai routes via the daemon/trace2 instead
+    # of via the git proxy.
+    $gitShim = Join-Path $installDir 'git.exe'
 
-# Wait for git.exe shim to be available if it exists and is in use
-if (Test-Path -LiteralPath $gitShim) {
-    if (-not (Wait-ForFileAvailable -Path $gitShim -InstallDir $installDir -MaxWaitSeconds 300 -RetryIntervalSeconds 5)) {
-        Write-ErrorAndExit "Timeout waiting for $gitShim to be available. Please close any running git processes and try again."
+    # Wait for git.exe shim to be available if it exists and is in use
+    if (Test-Path -LiteralPath $gitShim) {
+        if (-not (Wait-ForFileAvailable -Path $gitShim -InstallDir $installDir -MaxWaitSeconds 300 -RetryIntervalSeconds 5)) {
+            Write-ErrorAndExit "Timeout waiting for $gitShim to be available. Please close any running git processes and try again."
+        }
     }
+
+    Copy-Item -Force -Path $finalExe -Destination $gitShim
+    try { Unblock-File -Path $gitShim -ErrorAction SilentlyContinue } catch { }
+
+    # Create a shim so calling `git-og` invokes the standard Git
+    $gitOgShim = Join-Path $installDir 'git-og.cmd'
+    $gitOgShimContent = "@echo off$([Environment]::NewLine)`"$stdGitPath`" %*$([Environment]::NewLine)"
+    Set-Content -Path $gitOgShim -Value $gitOgShimContent -Encoding ASCII -Force
+    try { Unblock-File -Path $gitOgShim -ErrorAction SilentlyContinue } catch { }
 }
-
-Copy-Item -Force -Path $finalExe -Destination $gitShim
-try { Unblock-File -Path $gitShim -ErrorAction SilentlyContinue } catch { }
-
-# Create a shim so calling `git-og` invokes the standard Git
-$gitOgShim = Join-Path $installDir 'git-og.cmd'
-$gitOgShimContent = "@echo off$([Environment]::NewLine)`"$stdGitPath`" %*$([Environment]::NewLine)"
-Set-Content -Path $gitOgShim -Value $gitOgShimContent -Encoding ASCII -Force
-try { Unblock-File -Path $gitOgShim -ErrorAction SilentlyContinue } catch { }
 
 # Login user with install token if provided
 $needLogin = $false
@@ -543,7 +622,10 @@ try {
 # Best-effort restart only for daemon-initiated self-updates.
 Start-DaemonIfRequested
 
-# Update PATH so our shim takes precedence over any Git entries
+# Update PATH. For existing-wrapper users, prepend before any Git entry so the
+# git.exe shim shadows real git. For new users (no wrapper), just ensure our
+# install dir is on User PATH so `git-ai` is discoverable — no positioning,
+# no Machine PATH, no admin needed.
 $skipPathUpdate = $env:GIT_AI_SKIP_PATH_UPDATE -eq '1'
 if ($skipPathUpdate) {
     Write-Warning 'Skipping PATH updates because GIT_AI_SKIP_PATH_UPDATE=1'
@@ -551,8 +633,10 @@ if ($skipPathUpdate) {
         UserStatus    = 'Skipped'
         MachineStatus = 'Skipped'
     }
-} else {
+} elseif ($existingWrapper) {
     $pathUpdate = Set-PathPrependBeforeGit -PathToAdd $installDir
+} else {
+    $pathUpdate = Set-PathEnsureContains -PathToAdd $installDir
 }
 if ($pathUpdate.UserStatus -eq 'Updated') {
     Write-Success 'Successfully added git-ai to the user PATH.'
