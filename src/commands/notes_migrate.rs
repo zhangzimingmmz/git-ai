@@ -169,10 +169,8 @@ pub fn handle_notes_migrate(args: &[String]) {
                 total_uploaded += response.success_count;
                 total_failed += response.failure_count;
 
-                // 7. Persist locally as synced (cache_synced_notes).
-                // We persist the whole chunk even if the server reported some failures,
-                // because the server counts are per-entry and we can't identify which
-                // entries failed at this level. The cache is best-effort.
+                // Cache the whole chunk best-effort — the server doesn't
+                // tell us which specific entries failed.
                 cached_entries.extend_from_slice(chunk);
             }
             Err(e) => {
@@ -294,24 +292,31 @@ fn cat_file_batch(
         .spawn()
         .map_err(|e| GitAiError::Generic(format!("failed to spawn git cat-file --batch: {}", e)))?;
 
-    // Write all blob SHAs to stdin, then close it.
-    {
-        let stdin = child.stdin.as_mut().ok_or_else(|| {
-            GitAiError::Generic("failed to open git cat-file --batch stdin".to_string())
-        })?;
-        for sha in blob_shas {
-            writeln!(stdin, "{}", sha).map_err(|e| {
-                GitAiError::Generic(format!(
-                    "failed to write to git cat-file --batch stdin: {}",
-                    e
-                ))
-            })?;
+    // Take stdin out of the child so we can write in a separate thread.
+    // This avoids a pipe deadlock: with many notes, stdout fills its buffer
+    // and the child blocks on write, while the parent is still writing to
+    // stdin and blocks there too.
+    let mut stdin = child.stdin.take().ok_or_else(|| {
+        GitAiError::Generic("failed to open git cat-file --batch stdin".to_string())
+    })?;
+
+    let blob_shas_owned: Vec<String> = blob_shas.to_vec();
+    let writer_thread = std::thread::spawn(move || -> Result<(), std::io::Error> {
+        for sha in &blob_shas_owned {
+            writeln!(stdin, "{}", sha)?;
         }
-    } // stdin is dropped here, closing the pipe and signalling EOF.
+        Ok(())
+    });
 
     let output = child
         .wait_with_output()
         .map_err(|e| GitAiError::Generic(format!("git cat-file --batch failed: {}", e)))?;
+
+    if let Err(e) = writer_thread.join().expect("stdin writer thread panicked")
+        && e.kind() != std::io::ErrorKind::BrokenPipe
+    {
+        return Err(GitAiError::IoError(e));
+    }
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
