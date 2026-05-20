@@ -34,8 +34,12 @@ pub fn redact_json_secrets(value: Value) -> Value {
         ),
         Value::Array(arr) => Value::Array(arr.into_iter().map(redact_json_secrets).collect()),
         Value::String(s) => {
-            let (redacted, _) = redact_secrets_in_text(&s);
-            Value::String(redacted)
+            let (redacted, count) = redact_secrets_in_text(&s);
+            if count == 0 {
+                Value::String(s)
+            } else {
+                Value::String(redacted)
+            }
         }
         other => other,
     }
