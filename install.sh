@@ -276,22 +276,6 @@ fi
 # Install into the user's bin directory ~/.git-ai/bin
 INSTALL_DIR="$HOME/.git-ai/bin"
 
-# Detect whether this is an upgrade of an existing git-ai wrapper install.
-# Wrapper symlinks (~/.git-ai/bin/git, ~/.git-ai/bin/git-og) are only created
-# for users who already had them — new installs do not get the wrapper.
-is_existing_git_ai_wrapper() {
-    local git_link="${INSTALL_DIR}/git"
-    [ -L "$git_link" ] || return 1
-    local target
-    target=$(readlink "$git_link" 2>/dev/null) || return 1
-    [ "$(basename "$target")" = "git-ai" ] || return 1
-    return 0
-}
-EXISTING_WRAPPER=false
-if is_existing_git_ai_wrapper; then
-    EXISTING_WRAPPER=true
-fi
-
 # Create directory if it doesn't exist
 mkdir -p "$INSTALL_DIR"
 
@@ -324,14 +308,6 @@ mv -f "$TMP_FILE" "${INSTALL_DIR}/git-ai"
 
 # Make executable
 chmod +x "${INSTALL_DIR}/git-ai"
-
-if [ "$EXISTING_WRAPPER" = true ]; then
-    # Refresh wrapper symlinks for users who already had them.
-    # New installs intentionally skip these — git-ai routes via the daemon/trace2
-    # rather than via the git proxy.
-    ln -sf "${INSTALL_DIR}/git-ai" "${INSTALL_DIR}/git"
-    ln -sf "$STD_GIT_PATH" "${INSTALL_DIR}/git-og"
-fi
 
 # Remove quarantine attribute on macOS
 if [ "$OS" = "macos" ]; then
