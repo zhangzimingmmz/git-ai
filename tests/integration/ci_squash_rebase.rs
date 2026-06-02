@@ -1506,7 +1506,8 @@ fn test_ci_local_merge_squash_on_linear_main_does_not_note_base_commits() {
         .to_string();
 
     // feature branch off B0 with 3 AI commits (each gets a note via the wrapper)
-    repo.git_og(&["checkout", "-b", "feature", &b0_sha]).unwrap();
+    repo.git_og(&["checkout", "-b", "feature", &b0_sha])
+        .unwrap();
     let mut feat = repo.filename("feature.txt");
     feat.set_contents(crate::lines!["// P1 ai line".ai()]);
     repo.stage_all_and_commit("P1").unwrap();
