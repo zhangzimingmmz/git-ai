@@ -3273,7 +3273,10 @@ impl ActorDaemonCoordinator {
                                 .duration_since(std::time::SystemTime::UNIX_EPOCH)
                                 .unwrap_or_default()
                                 .as_nanos();
-                            std::collections::HashMap::from([(repo_wd.clone(), now_ns)])
+                            std::collections::HashMap::from([(
+                                Self::worktree_state_key(Path::new(&repo_wd)),
+                                now_ns,
+                            )])
                         } else {
                             std::collections::HashMap::new()
                         };
@@ -3342,7 +3345,7 @@ impl ActorDaemonCoordinator {
         Ok(())
     }
 
-    fn rewrite_worktree_key(worktree: &Path) -> String {
+    fn worktree_state_key(worktree: &Path) -> String {
         let normalized = worktree_root_for_path(worktree).unwrap_or_else(|| worktree.to_path_buf());
         normalized
             .canonicalize()
@@ -3363,7 +3366,7 @@ impl ActorDaemonCoordinator {
             .map_err(|_| {
                 GitAiError::Generic("pending rebase original-head map lock poisoned".to_string())
             })?;
-        map.insert(Self::rewrite_worktree_key(worktree), (original_head, onto));
+        map.insert(Self::worktree_state_key(worktree), (original_head, onto));
         Ok(())
     }
 
@@ -3377,7 +3380,7 @@ impl ActorDaemonCoordinator {
             .map_err(|_| {
                 GitAiError::Generic("pending rebase original-head map lock poisoned".to_string())
             })?;
-        map.remove(&Self::rewrite_worktree_key(worktree));
+        map.remove(&Self::worktree_state_key(worktree));
         Ok(())
     }
 
@@ -3391,7 +3394,7 @@ impl ActorDaemonCoordinator {
             .map_err(|_| {
                 GitAiError::Generic("pending rebase original-head map lock poisoned".to_string())
             })?;
-        Ok(map.remove(&Self::rewrite_worktree_key(worktree)))
+        Ok(map.remove(&Self::worktree_state_key(worktree)))
     }
 
     fn set_pending_cherry_pick_sources_for_worktree(
@@ -3405,7 +3408,7 @@ impl ActorDaemonCoordinator {
             .map_err(|_| {
                 GitAiError::Generic("pending cherry-pick sources map lock poisoned".to_string())
             })?;
-        let key = Self::rewrite_worktree_key(worktree);
+        let key = Self::worktree_state_key(worktree);
         if sources.is_empty() {
             map.remove(&key);
         } else {
@@ -3424,7 +3427,7 @@ impl ActorDaemonCoordinator {
             .map_err(|_| {
                 GitAiError::Generic("pending cherry-pick sources map lock poisoned".to_string())
             })?;
-        map.remove(&Self::rewrite_worktree_key(worktree));
+        map.remove(&Self::worktree_state_key(worktree));
         Ok(())
     }
 
@@ -3439,7 +3442,7 @@ impl ActorDaemonCoordinator {
                 GitAiError::Generic("pending cherry-pick sources map lock poisoned".to_string())
             })?;
         Ok(map
-            .remove(&Self::rewrite_worktree_key(worktree))
+            .remove(&Self::worktree_state_key(worktree))
             .unwrap_or_default())
     }
 
@@ -3455,7 +3458,7 @@ impl ActorDaemonCoordinator {
             .map_err(|_| {
                 GitAiError::Generic("pending cherry-pick no-commit map lock poisoned".to_string())
             })?;
-        let key = Self::rewrite_worktree_key(worktree);
+        let key = Self::worktree_state_key(worktree);
         if source_commits.is_empty() || head.is_empty() {
             map.remove(&key);
         } else {
@@ -3480,7 +3483,7 @@ impl ActorDaemonCoordinator {
             .map_err(|_| {
                 GitAiError::Generic("pending cherry-pick no-commit map lock poisoned".to_string())
             })?;
-        map.remove(&Self::rewrite_worktree_key(worktree));
+        map.remove(&Self::worktree_state_key(worktree));
         Ok(())
     }
 
@@ -3494,7 +3497,7 @@ impl ActorDaemonCoordinator {
             .map_err(|_| {
                 GitAiError::Generic("pending cherry-pick no-commit map lock poisoned".to_string())
             })?;
-        Ok(map.remove(&Self::rewrite_worktree_key(worktree)))
+        Ok(map.remove(&Self::worktree_state_key(worktree)))
     }
 
     fn set_pending_squash_merge_for_worktree(
@@ -3507,7 +3510,7 @@ impl ActorDaemonCoordinator {
             GitAiError::Generic("pending squash merge map lock poisoned".to_string())
         })?;
         map.insert(
-            Self::rewrite_worktree_key(worktree),
+            Self::worktree_state_key(worktree),
             PendingSquashMerge { source_head, onto },
         );
         Ok(())
@@ -3520,7 +3523,7 @@ impl ActorDaemonCoordinator {
         let mut map = self.pending_squash_merge_by_worktree.lock().map_err(|_| {
             GitAiError::Generic("pending squash merge map lock poisoned".to_string())
         })?;
-        Ok(map.remove(&Self::rewrite_worktree_key(worktree)))
+        Ok(map.remove(&Self::worktree_state_key(worktree)))
     }
 
     fn resolve_heads_for_command(
@@ -4669,7 +4672,8 @@ impl ActorDaemonCoordinator {
                 .watermarks_for_family(repo_working_dir.clone())
                 .await
                 .and_then(|ws| {
-                    let worktree_wm = ws.per_worktree.get(&repo_working_dir).copied();
+                    let worktree_key = Self::worktree_state_key(Path::new(&repo_working_dir));
+                    let worktree_wm = ws.per_worktree.get(&worktree_key).copied();
                     serde_json::to_value(json!({
                         "watermarks": ws.per_file,
                         "worktree_watermark": worktree_wm,
@@ -4709,7 +4713,7 @@ impl ActorDaemonCoordinator {
                 state.start_session(
                     session_id,
                     tool_use_id,
-                    repo_work_dir,
+                    Self::worktree_state_key(Path::new(&repo_work_dir)),
                     agent_id,
                     metadata,
                     *stat_snapshot,
@@ -4726,6 +4730,7 @@ impl ActorDaemonCoordinator {
             }
             ControlRequest::BashSessionQuery { repo_work_dir } => {
                 let state = self.bash_sessions.lock().unwrap();
+                let repo_work_dir = Self::worktree_state_key(Path::new(&repo_work_dir));
                 let response = match state.query_active_for_repo(&repo_work_dir) {
                     Some((key, session)) => {
                         let data = serde_json::to_value(BashSessionQueryResponse {
