@@ -19,6 +19,7 @@ use chrono::{TimeZone, Utc};
 use std::collections::{BinaryHeap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::Notify;
 use tokio::time::{Duration, interval};
 
@@ -136,6 +137,7 @@ struct StreamWorker {
     in_flight: HashSet<(PathBuf, String)>,
     telemetry_handle: DaemonTelemetryWorkerHandle,
     shutdown_notify: Arc<Notify>,
+    shutdown_flag: Arc<AtomicBool>,
     checkpoint_rx: tokio::sync::mpsc::UnboundedReceiver<CheckpointNotification>,
 }
 
@@ -145,6 +147,7 @@ impl StreamWorker {
         streams_db: Arc<StreamsDatabase>,
         telemetry_handle: DaemonTelemetryWorkerHandle,
         shutdown_notify: Arc<Notify>,
+        shutdown_flag: Arc<AtomicBool>,
         checkpoint_rx: tokio::sync::mpsc::UnboundedReceiver<CheckpointNotification>,
     ) -> Self {
         let sweep_coordinator =
@@ -158,6 +161,7 @@ impl StreamWorker {
             in_flight: HashSet::new(),
             telemetry_handle,
             shutdown_notify,
+            shutdown_flag,
             checkpoint_rx,
         }
     }
@@ -184,6 +188,7 @@ impl StreamWorker {
             tokio::select! {
                 _ = self.shutdown_notify.notified() => {
                     tracing::info!("transcript worker received shutdown signal");
+                    self.shutdown_flag.store(true, Ordering::Relaxed);
                     self.drain_immediate_tasks().await;
                     break;
                 }
@@ -471,6 +476,14 @@ impl StreamWorker {
         let mut tasks = Vec::new();
 
         for stream in streams {
+            // Shared streams (like OTEL traces) are global singletons that serve
+            // all sessions. They should only be processed during periodic sweeps,
+            // not on every checkpoint notification — otherwise each checkpoint
+            // re-enqueues the shared stream causing constant DB opens.
+            if stream.shared && priority == Priority::Immediate {
+                continue;
+            }
+
             let stream_path = match stream.resolve_path(canonical_path) {
                 Some(p) if p.exists() => p,
                 _ => continue,
@@ -658,10 +671,11 @@ impl StreamWorker {
         // Process the session (spawn blocking to avoid blocking the worker loop)
         let db = self.streams_db.clone();
         let telemetry = self.telemetry_handle.clone();
+        let shutdown_flag = self.shutdown_flag.clone();
         let task_clone = task.clone();
 
         let result = tokio::task::spawn_blocking(move || {
-            Self::process_session_blocking(&db, &telemetry, &task_clone)
+            Self::process_session_blocking(&db, &telemetry, &task_clone, &shutdown_flag)
         })
         .await;
 
@@ -702,6 +716,7 @@ impl StreamWorker {
         db: &StreamsDatabase,
         telemetry: &DaemonTelemetryWorkerHandle,
         task: &ProcessingTask,
+        shutdown_flag: &AtomicBool,
     ) -> Result<(), StreamError> {
         let task_path_str = task.canonical_path.display().to_string();
         let stream = db
@@ -785,6 +800,10 @@ impl StreamWorker {
                 .unwrap_or(false);
 
         loop {
+            if shutdown_flag.load(Ordering::Relaxed) {
+                break;
+            }
+
             let batch = agent.read_incremental(&path, current_watermark, &stream.session_id)?;
 
             if batch.events.is_empty() {
@@ -1012,10 +1031,11 @@ impl StreamWorker {
                 .insert((task.canonical_path.clone(), task.stream_kind.clone()));
             let db = self.streams_db.clone();
             let telemetry = self.telemetry_handle.clone();
+            let shutdown_flag = self.shutdown_flag.clone();
             let task_clone = task.clone();
 
             let result = tokio::task::spawn_blocking(move || {
-                Self::process_session_blocking(&db, &telemetry, &task_clone)
+                Self::process_session_blocking(&db, &telemetry, &task_clone, &shutdown_flag)
             })
             .await;
 
@@ -1042,8 +1062,15 @@ pub fn spawn_stream_worker(
     shutdown_notify: Arc<Notify>,
 ) -> StreamWorkerHandle {
     let (checkpoint_tx, checkpoint_rx) = tokio::sync::mpsc::unbounded_channel();
+    let shutdown_flag = Arc::new(AtomicBool::new(false));
 
-    let worker = StreamWorker::new(streams_db, telemetry_handle, shutdown_notify, checkpoint_rx);
+    let worker = StreamWorker::new(
+        streams_db,
+        telemetry_handle,
+        shutdown_notify,
+        shutdown_flag,
+        checkpoint_rx,
+    );
 
     tokio::spawn(async move {
         worker.run().await;
@@ -1114,8 +1141,9 @@ mod subagent_sweep_tests {
     fn make_worker(db: Arc<StreamsDatabase>) -> StreamWorker {
         let (_tx, rx) = tokio::sync::mpsc::unbounded_channel();
         let shutdown = Arc::new(Notify::new());
+        let shutdown_flag = Arc::new(AtomicBool::new(false));
         let telemetry = DaemonTelemetryWorkerHandle::new_noop();
-        StreamWorker::new(db, telemetry, shutdown, rx)
+        StreamWorker::new(db, telemetry, shutdown, shutdown_flag, rx)
     }
 
     #[test]

@@ -76,8 +76,8 @@ struct SpanRow {
     trace_id: String,
     parent_span_id: Option<String>,
     name: String,
-    start_time_ms: i64,
-    end_time_ms: i64,
+    start_time_ms: f64,
+    end_time_ms: f64,
     status_code: i32,
     status_message: Option<String>,
     operation_name: Option<String>,
@@ -100,7 +100,7 @@ struct SpanRow {
 
 fn read_spans_after(
     conn: &Connection,
-    after_ms: i64,
+    after_ms: f64,
     after_id: &str,
     limit: usize,
 ) -> Result<Vec<SpanRow>, StreamError> {
@@ -116,7 +116,7 @@ fn read_spans_after(
         (
             format!(
                 "SELECT span_id, trace_id, parent_span_id, name, \
-                 CAST(start_time_ms AS INTEGER), CAST(end_time_ms AS INTEGER), \
+                 start_time_ms, end_time_ms, \
                  status_code, status_message, operation_name, provider_name, agent_name, \
                  conversation_id, request_model, response_model, input_tokens, output_tokens, \
                  cached_tokens, reasoning_tokens, tool_name, tool_call_id, tool_type, \
@@ -134,7 +134,7 @@ fn read_spans_after(
         (
             format!(
                 "SELECT span_id, trace_id, parent_span_id, name, \
-                 CAST(start_time_ms AS INTEGER), CAST(end_time_ms AS INTEGER), \
+                 start_time_ms, end_time_ms, \
                  status_code, status_message, operation_name, provider_name, agent_name, \
                  conversation_id, request_model, response_model, input_tokens, output_tokens, \
                  cached_tokens, reasoning_tokens, tool_name, tool_call_id, tool_type, \
@@ -284,8 +284,8 @@ fn build_span_event_json(
             "trace_id": span.trace_id,
             "parent_span_id": span.parent_span_id,
             "name": span.name,
-            "start_time_ms": span.start_time_ms,
-            "end_time_ms": span.end_time_ms,
+            "start_time_ms": span.start_time_ms as i64,
+            "end_time_ms": span.end_time_ms as i64,
             "status_code": span.status_code,
             "status_message": span.status_message,
             "operation_name": span.operation_name,
@@ -410,7 +410,7 @@ mod tests {
         drop(conn);
 
         let watermark: Box<dyn WatermarkStrategy> =
-            Box::new(TimestampCursorWatermark::new(1000, "span1".to_string()));
+            Box::new(TimestampCursorWatermark::new(1000.0, "span1".to_string()));
         let batch = read_otel_spans_incremental(&db_path, watermark, 100).unwrap();
         assert_eq!(batch.events.len(), 2);
         assert_eq!(batch.events[0]["span"]["span_id"], "span2");
@@ -776,7 +776,7 @@ mod tests {
             .as_any()
             .downcast_ref::<TimestampCursorWatermark>()
             .unwrap();
-        assert_eq!(new_wm.timestamp_millis, 7000);
+        assert_eq!(new_wm.timestamp_millis, 7000.0);
         assert_eq!(new_wm.last_id, "span-b");
     }
 

@@ -198,14 +198,14 @@ impl FromStr for TimestampWatermark {
 /// Stores (timestamp_millis, last_cursor_id) to handle ties at batch boundaries.
 /// The cursor is the last-seen ID at the watermark timestamp, enabling
 /// `WHERE (ts > ?1 OR (ts = ?1 AND id > ?2))` style queries.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TimestampCursorWatermark {
-    pub timestamp_millis: i64,
+    pub timestamp_millis: f64,
     pub last_id: String,
 }
 
 impl TimestampCursorWatermark {
-    pub fn new(timestamp_millis: i64, last_id: String) -> Self {
+    pub fn new(timestamp_millis: f64, last_id: String) -> Self {
         Self {
             timestamp_millis,
             last_id,
@@ -214,7 +214,7 @@ impl TimestampCursorWatermark {
 
     pub fn initial() -> Self {
         Self {
-            timestamp_millis: 0,
+            timestamp_millis: 0.0,
             last_id: String::new(),
         }
     }
@@ -245,7 +245,7 @@ impl FromStr for TimestampCursorWatermark {
                 s
             ),
         })?;
-        let timestamp_millis = ts_str.parse::<i64>().map_err(|e| StreamError::Parse {
+        let timestamp_millis = ts_str.parse::<f64>().map_err(|e| StreamError::Parse {
             line: 0,
             message: format!("Invalid timestamp in TimestampCursor watermark: {}", e),
         })?;
@@ -618,28 +618,49 @@ mod tests {
 
     #[test]
     fn test_timestamp_cursor_watermark_serialize() {
-        let wm = TimestampCursorWatermark::new(12345, "span_abc".to_string());
+        let wm = TimestampCursorWatermark::new(12345.0, "span_abc".to_string());
         assert_eq!(wm.serialize(), "12345|span_abc");
+    }
+
+    #[test]
+    fn test_timestamp_cursor_watermark_serialize_fractional() {
+        let wm = TimestampCursorWatermark::new(12345.67, "span_abc".to_string());
+        assert_eq!(wm.serialize(), "12345.67|span_abc");
     }
 
     #[test]
     fn test_timestamp_cursor_watermark_deserialize() {
         let wm = TimestampCursorWatermark::from_str("67890|span_xyz").unwrap();
-        assert_eq!(wm.timestamp_millis, 67890);
+        assert_eq!(wm.timestamp_millis, 67890.0);
+        assert_eq!(wm.last_id, "span_xyz");
+    }
+
+    #[test]
+    fn test_timestamp_cursor_watermark_deserialize_fractional() {
+        let wm = TimestampCursorWatermark::from_str("67890.35|span_xyz").unwrap();
+        assert_eq!(wm.timestamp_millis, 67890.35);
         assert_eq!(wm.last_id, "span_xyz");
     }
 
     #[test]
     fn test_timestamp_cursor_watermark_initial() {
         let wm = TimestampCursorWatermark::initial();
-        assert_eq!(wm.timestamp_millis, 0);
+        assert_eq!(wm.timestamp_millis, 0.0);
         assert_eq!(wm.last_id, "");
         assert_eq!(wm.serialize(), "0|");
     }
 
     #[test]
     fn test_timestamp_cursor_watermark_roundtrip() {
-        let original = TimestampCursorWatermark::new(999999, "my-span-id".to_string());
+        let original = TimestampCursorWatermark::new(999999.0, "my-span-id".to_string());
+        let serialized = original.serialize();
+        let deserialized = TimestampCursorWatermark::from_str(&serialized).unwrap();
+        assert_eq!(original, deserialized);
+    }
+
+    #[test]
+    fn test_timestamp_cursor_watermark_roundtrip_fractional() {
+        let original = TimestampCursorWatermark::new(1780519329188.35, "span_id".to_string());
         let serialized = original.serialize();
         let deserialized = TimestampCursorWatermark::from_str(&serialized).unwrap();
         assert_eq!(original, deserialized);
