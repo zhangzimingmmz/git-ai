@@ -2,7 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.ComponentModel.Composition;
-using System.Diagnostics;
+using Trace = System.Diagnostics.Trace;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -127,7 +127,7 @@ namespace GitAiVS.Listeners
 
             var dirtyFiles = new Dictionary<string, string> { { relativePath, currentContent } };
 
-            Debug.WriteLine($"[git-ai] Triggering human checkpoint (before edit by {agentName}) on {relativePath}");
+            Trace.WriteLine($"[git-ai] Triggering human checkpoint (before edit by {agentName}) on {relativePath}");
 
             _ = Task.Run(() => CheckpointSvc!.SendBeforeEditAsync(
                 workspaceRoot,
@@ -161,7 +161,7 @@ namespace GitAiVS.Listeners
 
                 var dirtyFiles = new Dictionary<string, string> { { relativePath, contentAfterEdit } };
 
-                Debug.WriteLine($"[git-ai] Triggering ai_agent checkpoint for {agentName} on {relativePath}");
+                Trace.WriteLine($"[git-ai] Triggering ai_agent checkpoint for {agentName} on {relativePath}");
 
 #pragma warning disable VSTHRD110
                 CheckpointSvc?.SendAfterEditAsync(
@@ -185,9 +185,9 @@ namespace GitAiVS.Listeners
         {
             if (analysis.AgentName != null)
             {
-                Debug.WriteLine($"[git-ai] Buffer change detected on {Path.GetFileName(filePath)}");
-                Debug.WriteLine($"[git-ai]   Source: {analysis.AgentName} (confidence: {analysis.Confidence})");
-                Debug.WriteLine($"[git-ai]   Relevant frames:\n{CopilotEditDetector.FormatRelevantFrames(analysis.RelevantFrames)}");
+                Trace.WriteLine($"[git-ai] Buffer change detected on {Path.GetFileName(filePath)}");
+                Trace.WriteLine($"[git-ai]   Source: {analysis.AgentName} (confidence: {analysis.Confidence})");
+                Trace.WriteLine($"[git-ai]   Relevant frames:\n{CopilotEditDetector.FormatRelevantFrames(analysis.RelevantFrames)}");
             }
         }
     }

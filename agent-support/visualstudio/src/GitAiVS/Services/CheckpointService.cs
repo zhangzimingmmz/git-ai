@@ -120,7 +120,7 @@ namespace GitAiVS.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[git-ai] Checkpoint error: {ex.Message}");
+                System.Diagnostics.Trace.WriteLine($"[git-ai] Checkpoint error: {ex.Message}");
                 return false;
             }
         }

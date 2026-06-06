@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Diagnostics;
+using Trace = System.Diagnostics.Trace;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -96,7 +96,7 @@ namespace GitAiVS.Listeners
 
             if (editedPaths.Count == 0) return;
 
-            Debug.WriteLine($"[git-ai] Firing known_human checkpoint for {editedPaths.Count} file(s)");
+            Trace.WriteLine($"[git-ai] Firing known_human checkpoint for {editedPaths.Count} file(s)");
 
             _ = _checkpointSvc.SendKnownHumanAsync(
                 workspaceRoot,

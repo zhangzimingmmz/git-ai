@@ -1,6 +1,4 @@
 using System;
-using System.ComponentModel.Composition;
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -38,26 +36,26 @@ namespace GitAiVS
             await base.InitializeAsync(cancellationToken, progress);
             await JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
 
-            Debug.WriteLine("[git-ai] GitAiPackage initializing...");
+            System.Diagnostics.Trace.WriteLine("[git-ai] GitAiPackage initializing...");
 
             _binaryResolver = new BinaryResolver();
             var binaryPath = _binaryResolver.Resolve();
 
             if (binaryPath == null)
             {
-                Debug.WriteLine("[git-ai] git-ai binary not found. Extension will be inactive.");
+                System.Diagnostics.Trace.WriteLine("[git-ai] git-ai binary not found. Extension will be inactive.");
                 ShowInfoBar("git-ai is not installed. Visit https://usegitai.com to install it.");
                 return;
             }
 
-            Debug.WriteLine($"[git-ai] Found git-ai at {binaryPath} (version {_binaryResolver.ResolvedVersion})");
+            System.Diagnostics.Trace.WriteLine($"[git-ai] Found git-ai at {binaryPath} (version {_binaryResolver.ResolvedVersion})");
 
             _checkpointService = new CheckpointService(_binaryResolver);
 
             WireTextBufferListener();
             SubscribeToSaveEvents();
 
-            Debug.WriteLine("[git-ai] GitAiPackage initialized successfully.");
+            System.Diagnostics.Trace.WriteLine("[git-ai] GitAiPackage initialized successfully.");
         }
 
         /// <summary>
@@ -72,7 +70,7 @@ namespace GitAiVS
 
             if (componentModel == null)
             {
-                Debug.WriteLine("[git-ai] Could not get component model to wire TextBufferListener");
+                System.Diagnostics.Trace.WriteLine("[git-ai] Could not get component model to wire TextBufferListener");
                 return;
             }
 
@@ -82,11 +80,11 @@ namespace GitAiVS
             if (listener != null)
             {
                 listener.CheckpointSvc = _checkpointService;
-                Debug.WriteLine("[git-ai] TextBufferListener wired with CheckpointService");
+                System.Diagnostics.Trace.WriteLine("[git-ai] TextBufferListener wired with CheckpointService");
             }
             else
             {
-                Debug.WriteLine("[git-ai] TextBufferListener not found in MEF exports");
+                System.Diagnostics.Trace.WriteLine("[git-ai] TextBufferListener not found in MEF exports");
             }
         }
 
@@ -100,7 +98,7 @@ namespace GitAiVS
             var rdt = GetService(typeof(SVsRunningDocumentTable)) as IVsRunningDocumentTable;
             if (rdt == null)
             {
-                Debug.WriteLine("[git-ai] Could not get Running Document Table");
+                System.Diagnostics.Trace.WriteLine("[git-ai] Could not get Running Document Table");
                 return;
             }
 
@@ -112,7 +110,7 @@ namespace GitAiVS
             var rdtEvents = new RdtSaveEventSink(_saveListener, rdt);
             rdt.AdviseRunningDocTableEvents(rdtEvents, out _rdtCookie);
 
-            Debug.WriteLine("[git-ai] Subscribed to document save events");
+            System.Diagnostics.Trace.WriteLine("[git-ai] Subscribed to document save events");
         }
 
         private static string GetVisualStudioVersion()
@@ -137,7 +135,7 @@ namespace GitAiVS
 
         private void ShowInfoBar(string message)
         {
-            Debug.WriteLine($"[git-ai] Info: {message}");
+            System.Diagnostics.Trace.WriteLine($"[git-ai] Info: {message}");
             // TODO: Implement VS info bar notification via IVsInfoBarUIFactory
         }
 
