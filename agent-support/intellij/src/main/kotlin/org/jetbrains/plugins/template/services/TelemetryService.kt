@@ -240,17 +240,19 @@ class TelemetryService : Disposable {
         }
     }
 
-    private fun getPluginVersion(): String {
-        return try {
+    private val pluginVersion: String by lazy {
+        try {
             val xml = this::class.java.classLoader
                 .getResourceAsStream("META-INF/plugin.xml")
-                ?.bufferedReader()?.readText() ?: return "unknown"
+                ?.bufferedReader()?.use { it.readText() } ?: return@lazy "unknown"
             Regex("<version>(.+?)</version>").find(xml)
                 ?.groupValues?.get(1) ?: "unknown"
         } catch (_: Exception) {
             "unknown"
         }
     }
+
+    private fun getPluginVersion(): String = pluginVersion
 
     private fun getCommonProperties(): Map<String, Any> {
         return mapOf(
