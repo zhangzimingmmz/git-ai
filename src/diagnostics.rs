@@ -4,10 +4,10 @@ use crate::diagnostic_sentinels::{
     DEBUG_SELF_CHECK_REMOTE_URL, debug_self_check_root, path_is_in_debug_self_check_root,
 };
 use crate::git::repository::discover_repository_in_path_no_git_exec;
+use crate::process_timeout::run_command_with_timeout;
 use serde_json::Value;
 use std::fs;
 use std::path::Path;
-use std::process::Command;
 use std::time::{Duration, Instant};
 
 const SELF_CHECK_FILE: &str = "git-ai-debug-self-check.txt";
@@ -17,8 +17,7 @@ const SELF_CHECK_CONTENT_AI: &str = "Untracked line\nKnown human line\nAI line\n
 const TRACE2_EVENT_TARGET_KEY: &str = "trace2.eventTarget";
 const TRACE2_EVENT_NESTING_KEY: &str = "trace2.eventNesting";
 const TRACE2_EVENT_NESTING_VALUE: &str = "10";
-const CHECKPOINT_WAIT: Duration = Duration::from_secs(10);
-const NOTE_WAIT: Duration = Duration::from_secs(20);
+const DEBUG_CHECK_TIMEOUT: Duration = Duration::from_secs(3);
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,11 +42,12 @@ pub struct CommandRecord {
     pub status: Option<i32>,
     pub stdout: String,
     pub stderr: String,
+    pub timed_out: bool,
 }
 
 impl CommandRecord {
     fn success(&self) -> bool {
-        self.status == Some(0)
+        !self.timed_out && self.status == Some(0)
     }
 }
 
@@ -192,6 +192,7 @@ pub fn check_trace2_global_config(target: &GitDiagnosticTarget) -> DiagnosticChe
 
 pub fn run_attribution_self_check(target: &GitDiagnosticTarget) -> DiagnosticCheckResult {
     let mut commands = Vec::new();
+    let deadline = Instant::now() + DEBUG_CHECK_TIMEOUT;
     let repo_path = debug_self_check_root().join(format!(
         "{}-{}",
         sanitize_label(&target.label),
@@ -203,70 +204,77 @@ pub fn run_attribution_self_check(target: &GitDiagnosticTarget) -> DiagnosticChe
         fs::create_dir_all(&repo_path)
             .map_err(|e| format!("failed to create {}: {}", repo_path.display(), e))?;
 
-        run_required(
+        run_required_until(
             &mut commands,
             &target.program,
             &["init", "."],
             Some(&repo_path),
+            deadline,
         )?;
-        run_required(
+        run_required_until(
             &mut commands,
             &target.program,
             &["config", "user.name", "Git AI Debug"],
             Some(&repo_path),
+            deadline,
         )?;
-        run_required(
+        run_required_until(
             &mut commands,
             &target.program,
             &["config", "user.email", "debug-self-check@git-ai.invalid"],
             Some(&repo_path),
+            deadline,
         )?;
-        run_required(
+        run_required_until(
             &mut commands,
             &target.program,
             &["remote", "add", "origin", DEBUG_SELF_CHECK_REMOTE_URL],
             Some(&repo_path),
+            deadline,
         )?;
 
         fs::write(&file_path, SELF_CHECK_CONTENT_UNTRACKED)
             .map_err(|e| format!("failed to write {}: {}", file_path.display(), e))?;
-        run_git_ai_checkpoint(&mut commands, &repo_path, "human")?;
-        wait_for_checkpoint_count(&repo_path, 1)?;
+        run_git_ai_checkpoint(&mut commands, &repo_path, "human", deadline)?;
+        wait_for_checkpoint_count(&repo_path, 1, deadline)?;
 
         fs::write(&file_path, SELF_CHECK_CONTENT_KNOWN_HUMAN)
             .map_err(|e| format!("failed to write {}: {}", file_path.display(), e))?;
-        run_git_ai_checkpoint(&mut commands, &repo_path, "mock_known_human")?;
-        wait_for_checkpoint_count(&repo_path, 2)?;
+        run_git_ai_checkpoint(&mut commands, &repo_path, "mock_known_human", deadline)?;
+        wait_for_checkpoint_count(&repo_path, 2, deadline)?;
 
         fs::write(&file_path, SELF_CHECK_CONTENT_AI)
             .map_err(|e| format!("failed to write {}: {}", file_path.display(), e))?;
-        run_git_ai_checkpoint(&mut commands, &repo_path, "mock_ai")?;
-        wait_for_checkpoint_count(&repo_path, 3)?;
+        run_git_ai_checkpoint(&mut commands, &repo_path, "mock_ai", deadline)?;
+        wait_for_checkpoint_count(&repo_path, 3, deadline)?;
 
-        run_required(
+        run_required_until(
             &mut commands,
             &target.program,
             &["add", SELF_CHECK_FILE],
             Some(&repo_path),
+            deadline,
         )?;
-        run_required(
+        run_required_until(
             &mut commands,
             &target.program,
             &["commit", "-m", "git-ai debug self check"],
             Some(&repo_path),
+            deadline,
         )?;
 
-        let commit_sha = run_required(
+        let commit_sha = run_required_until(
             &mut commands,
             &target.program,
             &["rev-parse", "HEAD"],
             Some(&repo_path),
+            deadline,
         )?
         .stdout
         .trim()
         .to_string();
 
-        let note = poll_authorship_note(&mut commands, &target.program, &repo_path)?;
+        let note = poll_authorship_note(&mut commands, &target.program, &repo_path, deadline)?;
         let mut details = validate_self_check_authorship_note(&note)?;
         details.insert(0, format!("repo: {}", repo_path.display()));
         details.insert(1, format!("commit: {}", commit_sha));
@@ -292,6 +300,7 @@ pub fn run_attribution_self_check(target: &GitDiagnosticTarget) -> DiagnosticChe
 
 pub fn run_trace2_file_self_check(target: &GitDiagnosticTarget) -> DiagnosticCheckResult {
     let mut commands = Vec::new();
+    let deadline = Instant::now() + DEBUG_CHECK_TIMEOUT;
     let trace_dir = crate::mdm::utils::home_dir()
         .join(".git-ai")
         .join("internal")
@@ -329,7 +338,7 @@ pub fn run_trace2_file_self_check(target: &GitDiagnosticTarget) -> DiagnosticChe
 
         // This intentionally uses global git config rather than a process-local
         // GIT_TRACE2_EVENT override so the diagnostic exercises the install path.
-        run_required(
+        run_required_until(
             &mut commands,
             &target.program,
             &[
@@ -340,16 +349,18 @@ pub fn run_trace2_file_self_check(target: &GitDiagnosticTarget) -> DiagnosticChe
                 trace_path_string.as_str(),
             ],
             None,
+            deadline,
         )?;
         changed_global_event_target = true;
 
         // Use init rather than version: when terminal git is the git-ai proxy,
         // read-only commands intentionally suppress trace2 before invoking real git.
-        run_required(
+        run_required_until(
             &mut commands,
             &target.program,
             &["init", "."],
             Some(&trace_command_dir),
+            deadline,
         )?;
 
         let trace2_json = fs::read_to_string(&trace_path)
@@ -406,28 +417,76 @@ fn run_git_ai_checkpoint(
     commands: &mut Vec<CommandRecord>,
     repo_path: &Path,
     preset: &str,
+    deadline: Instant,
 ) -> Result<CommandRecord, String> {
     let git_ai = std::env::current_exe()
         .map_err(|e| format!("failed to resolve git-ai binary path: {}", e))?;
     let git_ai = git_ai.to_string_lossy().to_string();
-    run_required(
+    run_required_until(
         commands,
         &git_ai,
         &["checkpoint", preset, SELF_CHECK_FILE],
         Some(repo_path),
+        deadline,
     )
 }
 
-fn run_required(
+fn run_required_until(
     commands: &mut Vec<CommandRecord>,
     program: &str,
     args: &[&str],
     cwd: Option<&Path>,
+    deadline: Instant,
 ) -> Result<CommandRecord, String> {
-    let record = run_logged_command(program, args, cwd);
+    let timeout = remaining_timeout(deadline);
+    if timeout.is_zero() {
+        let record = CommandRecord {
+            command: format_command(program, args),
+            cwd: cwd.map(|p| p.display().to_string()),
+            status: None,
+            stdout: String::new(),
+            stderr: format!(
+                "self-check timed out after {:.1}s before this command could start",
+                DEBUG_CHECK_TIMEOUT.as_secs_f64()
+            ),
+            timed_out: true,
+        };
+        let error = format!("command timed out before start: {}", record.command);
+        commands.push(record);
+        return Err(error);
+    }
+
+    run_required_with_timeout(commands, program, args, cwd, timeout)
+}
+
+fn run_required_with_timeout(
+    commands: &mut Vec<CommandRecord>,
+    program: &str,
+    args: &[&str],
+    cwd: Option<&Path>,
+    timeout: Duration,
+) -> Result<CommandRecord, String> {
+    let record = run_logged_command_with_timeout(program, args, cwd, timeout);
     let success = record.success();
     let error = if success {
         None
+    } else if record.timed_out {
+        let mut error = format!(
+            "command timed out: {} (timeout={:.1}s, status={})",
+            record.command,
+            timeout.as_secs_f64(),
+            format_status(record.status)
+        );
+        if let Some(cwd) = &record.cwd {
+            error.push_str(&format!(", cwd={}", cwd));
+        }
+        if !record.stdout.trim().is_empty() {
+            error.push_str(&format!(", stdout={}", record.stdout.trim()));
+        }
+        if !record.stderr.trim().is_empty() {
+            error.push_str(&format!(", stderr={}", record.stderr.trim()));
+        }
+        Some(error)
     } else {
         Some(format!(
             "command failed: {} (status={})",
@@ -443,34 +502,96 @@ fn run_required(
 }
 
 fn run_logged_command(program: &str, args: &[&str], cwd: Option<&Path>) -> CommandRecord {
-    let output = Command::new(program)
-        .args(args)
-        .current_dir(cwd.unwrap_or_else(|| Path::new(".")))
-        .output();
+    run_logged_command_with_timeout(program, args, cwd, DEBUG_CHECK_TIMEOUT)
+}
+
+fn run_logged_command_with_timeout(
+    program: &str,
+    args: &[&str],
+    cwd: Option<&Path>,
+    timeout: Duration,
+) -> CommandRecord {
     let command = format_command(program, args);
-    match output {
-        Ok(output) => CommandRecord {
-            command,
-            cwd: cwd.map(|p| p.display().to_string()),
-            status: output.status.code(),
-            stdout: String::from_utf8_lossy(&output.stdout).trim().to_string(),
-            stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
-        },
+    let cwd_display = cwd.map(|p| p.display().to_string());
+    match run_command_with_timeout(program, args, cwd, timeout, POLL_INTERVAL) {
+        Ok(output) => {
+            let stderr = format_logged_stderr(
+                output.timed_out,
+                timeout,
+                output.stderr,
+                output.diagnostics,
+                output.wait_error,
+            );
+            CommandRecord {
+                command,
+                cwd: cwd_display,
+                status: output.status,
+                stdout: output.stdout,
+                stderr,
+                timed_out: output.timed_out,
+            }
+        }
         Err(e) => CommandRecord {
             command,
-            cwd: cwd.map(|p| p.display().to_string()),
+            cwd: cwd_display,
             status: None,
             stdout: String::new(),
-            stderr: format!("failed to execute: {}", e),
+            stderr: e,
+            timed_out: false,
         },
     }
 }
 
-fn wait_for_checkpoint_count(repo_path: &Path, expected_min_count: usize) -> Result<(), String> {
+fn format_logged_stderr(
+    timed_out: bool,
+    timeout: Duration,
+    process_stderr: String,
+    diagnostics: Vec<String>,
+    wait_error: Option<String>,
+) -> String {
+    let mut stderr = String::new();
+    if timed_out {
+        stderr.push_str(&format!("timed out after {:.1}s", timeout.as_secs_f64()));
+        if !process_stderr.trim().is_empty() {
+            stderr.push_str("\nstderr before timeout:\n");
+            stderr.push_str(process_stderr.trim());
+        }
+    } else {
+        stderr.push_str(process_stderr.trim());
+    }
+
+    if let Some(wait_error) = wait_error {
+        append_stderr_line(
+            &mut stderr,
+            &format!("failed while waiting for command: {}", wait_error),
+        );
+    }
+    for diagnostic in diagnostics {
+        append_stderr_line(&mut stderr, &diagnostic);
+    }
+    stderr
+}
+
+fn append_stderr_line(stderr: &mut String, line: &str) {
+    if !stderr.is_empty() {
+        stderr.push('\n');
+    }
+    stderr.push_str(line);
+}
+
+fn remaining_timeout(deadline: Instant) -> Duration {
+    deadline.saturating_duration_since(Instant::now())
+}
+
+fn wait_for_checkpoint_count(
+    repo_path: &Path,
+    expected_min_count: usize,
+    deadline: Instant,
+) -> Result<(), String> {
     let start = Instant::now();
     let mut last_error = None;
 
-    while start.elapsed() < CHECKPOINT_WAIT {
+    while Instant::now() < deadline {
         match read_checkpoint_count(repo_path) {
             Ok(count) if count >= expected_min_count => return Ok(()),
             Ok(count) => {
@@ -485,8 +606,14 @@ fn wait_for_checkpoint_count(repo_path: &Path, expected_min_count: usize) -> Res
     }
 
     Err(format!(
-        "timed out waiting for checkpoint persistence: {}",
-        last_error.unwrap_or_else(|| "no checkpoint status available".to_string())
+        "timed out after {:.1}s waiting for checkpoint persistence: {}",
+        start.elapsed().as_secs_f64(),
+        last_error.unwrap_or_else(|| {
+            format!(
+                "no checkpoint status available for repo {}",
+                repo_path.display()
+            )
+        })
     ))
 }
 
@@ -506,29 +633,43 @@ fn poll_authorship_note(
     commands: &mut Vec<CommandRecord>,
     git_program: &str,
     repo_path: &Path,
+    deadline: Instant,
 ) -> Result<String, String> {
     let start = Instant::now();
     let mut last_record = None;
 
-    while start.elapsed() < NOTE_WAIT {
-        let record = run_logged_command(
+    while Instant::now() < deadline {
+        let timeout = remaining_timeout(deadline);
+        if timeout.is_zero() {
+            break;
+        }
+        let record = run_logged_command_with_timeout(
             git_program,
             &["notes", "--ref=ai", "show", "HEAD"],
             Some(repo_path),
+            timeout,
         );
         if record.success() && !record.stdout.trim().is_empty() {
             let note = record.stdout.clone();
             commands.push(record);
             return Ok(note);
         }
+        let timed_out = record.timed_out;
         last_record = Some(record);
+        if timed_out {
+            break;
+        }
         std::thread::sleep(POLL_INTERVAL);
     }
 
     if let Some(record) = last_record {
         commands.push(record);
     }
-    Err("timed out waiting for authorship note on HEAD".to_string())
+    Err(format!(
+        "timed out after {:.1}s waiting for authorship note on HEAD in {}",
+        start.elapsed().as_secs_f64(),
+        repo_path.display()
+    ))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -925,6 +1066,26 @@ fn format_status(status: Option<i32>) -> String {
 mod tests {
     use super::*;
 
+    #[cfg(not(windows))]
+    fn stdout_stderr_sleep_command() -> (&'static str, Vec<&'static str>) {
+        (
+            "sh",
+            vec!["-c", "printf out; printf err >&2; exec sleep 60"],
+        )
+    }
+
+    #[cfg(windows)]
+    fn stdout_stderr_sleep_command() -> (&'static str, Vec<&'static str>) {
+        (
+            "powershell.exe",
+            vec![
+                "-NoProfile",
+                "-Command",
+                "[Console]::Out.Write('out'); [Console]::Error.Write('err'); Start-Sleep -Seconds 60",
+            ],
+        )
+    }
+
     #[test]
     fn test_validate_trace2_command_events_accepts_expected_events() {
         let trace = r#"{"event":"version"}
@@ -981,5 +1142,26 @@ mod tests {
                 .iter()
                 .any(|detail| detail.contains("Common causes"))
         );
+    }
+
+    #[test]
+    fn test_run_logged_command_with_timeout_reports_partial_output() {
+        let (program, args) = stdout_stderr_sleep_command();
+        let record =
+            run_logged_command_with_timeout(program, &args, None, Duration::from_millis(300));
+
+        assert!(record.timed_out, "{record:?}");
+        assert_eq!(record.stdout, "out");
+        assert!(record.stderr.contains("timed out after"), "{record:?}");
+        assert!(
+            record.stderr.contains("sent kill to child process")
+                || record.stderr.contains("failed to kill child process"),
+            "{record:?}"
+        );
+        assert!(
+            record.stderr.contains("stderr before timeout"),
+            "{record:?}"
+        );
+        assert!(record.stderr.contains("err"), "{record:?}");
     }
 }

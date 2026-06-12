@@ -2,11 +2,12 @@ use crate::auth::{AuthState, collect_auth_status, format_unix_timestamp};
 use crate::config;
 use crate::diagnostics::{DiagnosticCheckResult, GitDiagnosticTarget};
 use crate::git::find_repository_in_path;
+use crate::process_timeout::{TimedCommandOutput, run_command_with_timeout};
 use std::env;
 use std::fmt::Write as _;
 use std::fs;
 use std::path::Path;
-use std::process::Command;
+use std::time::Duration;
 
 const MIN_GIT_VERSION: GitVersion = GitVersion {
     major: 2,
@@ -14,6 +15,8 @@ const MIN_GIT_VERSION: GitVersion = GitVersion {
     patch: 0,
 };
 const MIN_GIT_VERSION_DISPLAY: &str = "2.22.0";
+const DEBUG_COMMAND_TIMEOUT: Duration = Duration::from_secs(3);
+const DEBUG_COMMAND_POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 pub fn handle_debug(args: &[String]) {
     if args
@@ -419,11 +422,18 @@ fn append_diagnostic_check(
             let _ = writeln!(
                 out,
                 "        status: {}",
-                command
-                    .status
-                    .map(|code| code.to_string())
-                    .unwrap_or_else(|| "<unavailable>".to_string())
+                if command.timed_out {
+                    "<timeout>".to_string()
+                } else {
+                    command
+                        .status
+                        .map(|code| code.to_string())
+                        .unwrap_or_else(|| "<unavailable>".to_string())
+                }
             );
+            if command.timed_out {
+                let _ = writeln!(out, "        timed out: yes");
+            }
             if !command.stdout.trim().is_empty() {
                 let _ = writeln!(out, "        stdout:");
                 append_indented_block_with_prefix(out, &command.stdout, "          ");
@@ -595,16 +605,41 @@ fn append_indented_block_with_prefix(out: &mut String, content: &str, prefix: &s
 }
 
 fn run_command_capture(program: &str, args: &[&str]) -> Result<String, String> {
-    let output = Command::new(program)
-        .args(args)
-        .output()
-        .map_err(|e| format!("failed to execute '{}': {}", program, e))?;
+    run_command_capture_with_timeout(program, args, DEBUG_COMMAND_TIMEOUT)
+}
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+fn run_command_capture_with_timeout(
+    program: &str,
+    args: &[&str],
+    timeout: Duration,
+) -> Result<String, String> {
+    let command = format_command_for_error(program, args);
+    let output =
+        run_command_with_timeout(program, args, None, timeout, DEBUG_COMMAND_POLL_INTERVAL)
+            .map_err(|e| {
+                format!(
+                    "failed to execute '{}': {}",
+                    program,
+                    strip_execute_prefix(&e)
+                )
+            })?;
+
+    if output.timed_out {
+        return Err(format_timeout_capture_error(&command, timeout, output));
+    }
+    if output.wait_error.is_some() {
+        return Err(format_wait_capture_error(&command, output));
+    }
+
+    command_output_to_result(output)
+}
+
+fn command_output_to_result(output: TimedCommandOutput) -> Result<String, String> {
+    if output.status != Some(0) {
+        let mut stderr = output.stderr.trim().to_string();
+        append_debug_diagnostics(&mut stderr, &output.diagnostics);
         let code = output
             .status
-            .code()
             .map(|c| c.to_string())
             .unwrap_or_else(|| "signal".to_string());
         if stderr.is_empty() {
@@ -613,7 +648,85 @@ fn run_command_capture(program: &str, args: &[&str]) -> Result<String, String> {
         return Err(format!("exit code {}: {}", code, stderr));
     }
 
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    Ok(output.stdout)
+}
+
+fn format_timeout_capture_error(
+    command: &str,
+    timeout: Duration,
+    output: TimedCommandOutput,
+) -> String {
+    let mut message = format!(
+        "timed out after {:.1}s running '{}'",
+        timeout.as_secs_f64(),
+        command
+    );
+    append_debug_diagnostics(&mut message, &output.diagnostics);
+    if let Some(wait_error) = output.wait_error {
+        message.push_str(&format!("; failed while waiting: {}", wait_error));
+    }
+    if !output.stdout.trim().is_empty() {
+        message.push_str(&format!(
+            "; stdout before timeout: {}",
+            output.stdout.trim()
+        ));
+    }
+    if !output.stderr.trim().is_empty() {
+        message.push_str(&format!(
+            "; stderr before timeout: {}",
+            output.stderr.trim()
+        ));
+    }
+    message
+}
+
+fn format_wait_capture_error(command: &str, output: TimedCommandOutput) -> String {
+    let wait_error = output.wait_error.as_deref().unwrap_or("unknown wait error");
+    let mut message = format!("failed while waiting for '{}': {}", command, wait_error);
+    append_debug_diagnostics(&mut message, &output.diagnostics);
+    if !output.stdout.trim().is_empty() {
+        message.push_str(&format!(
+            "; stdout before wait failure: {}",
+            output.stdout.trim()
+        ));
+    }
+    if !output.stderr.trim().is_empty() {
+        message.push_str(&format!(
+            "; stderr before wait failure: {}",
+            output.stderr.trim()
+        ));
+    }
+    message
+}
+
+fn append_debug_diagnostics(message: &mut String, diagnostics: &[String]) {
+    for diagnostic in diagnostics {
+        message.push_str("; ");
+        message.push_str(diagnostic);
+    }
+}
+
+fn strip_execute_prefix(error: &str) -> &str {
+    error.strip_prefix("failed to execute: ").unwrap_or(error)
+}
+
+fn format_command_for_error(program: &str, args: &[&str]) -> String {
+    std::iter::once(program)
+        .chain(args.iter().copied())
+        .map(shell_quote_for_error)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn shell_quote_for_error(value: &str) -> String {
+    if value
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || "-_./:=@".contains(ch))
+    {
+        value.to_string()
+    } else {
+        format!("'{}'", value.replace('\'', "'\\''"))
+    }
 }
 
 #[derive(Default)]
@@ -1009,6 +1122,26 @@ fn redact_env_value(key: &str, value: &str) -> String {
 mod tests {
     use super::*;
 
+    #[cfg(not(windows))]
+    fn stdout_stderr_sleep_command() -> (&'static str, Vec<&'static str>) {
+        (
+            "sh",
+            vec!["-c", "printf out; printf err >&2; exec sleep 60"],
+        )
+    }
+
+    #[cfg(windows)]
+    fn stdout_stderr_sleep_command() -> (&'static str, Vec<&'static str>) {
+        (
+            "powershell.exe",
+            vec![
+                "-NoProfile",
+                "-Command",
+                "[Console]::Out.Write('out'); [Console]::Error.Write('err'); Start-Sleep -Seconds 60",
+            ],
+        )
+    }
+
     #[test]
     fn test_redact_git_config_line_redacts_sensitive_key() {
         let line =
@@ -1134,5 +1267,21 @@ mod tests {
             realpath_for_display(&exe.display().to_string()),
             expected.display().to_string()
         );
+    }
+
+    #[test]
+    fn test_run_command_capture_with_timeout_reports_partial_output() {
+        let (program, args) = stdout_stderr_sleep_command();
+        let err = run_command_capture_with_timeout(program, &args, Duration::from_millis(300))
+            .unwrap_err();
+
+        assert!(err.contains("timed out after"), "{err}");
+        assert!(
+            err.contains("sent kill to child process")
+                || err.contains("failed to kill child process"),
+            "{err}"
+        );
+        assert!(err.contains("stdout before timeout: out"), "{err}");
+        assert!(err.contains("stderr before timeout: err"), "{err}");
     }
 }

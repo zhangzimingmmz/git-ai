@@ -15,6 +15,7 @@ pub mod mdm;
 pub mod metrics;
 pub mod notes;
 pub mod observability;
+pub mod process_timeout;
 pub mod repo_url;
 pub mod streams;
 pub mod utils;
