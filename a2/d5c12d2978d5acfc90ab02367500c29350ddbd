@@ -13,6 +13,7 @@ src/daemon.rs
   s_f00ef7c0f45b07::t_7bcc4198e45bdd 6651-6654,6657,6660-6661
   s_f00ef7c0f45b07::t_0bae641a59a86d 6859
   s_f00ef7c0f45b07::t_3fe1a769c158b7 5062,5075,5077-5089,5095-5105,5299,5312,5314-5325,5331-5336,5340-5341
+  s_b3918a71142a3e::t_a3a35f774aecc7 5021,5342-5343,6650,6662
 src/daemon/ref_cursor.rs
   s_f00ef7c0f45b07::t_10428641555dfb 196-200,204,206,214-216,1071,1074
   s_f00ef7c0f45b07::t_8dee37754d1454 217
@@ -24,9 +25,11 @@ tests/daemon_mode.rs
   s_f00ef7c0f45b07::t_f98dd8da9659e0 1712
   s_f00ef7c0f45b07::t_5a1ad1aee93e42 1460-1548,1659-1711,1713-1714
   s_f00ef7c0f45b07::t_1fd4f711e5573c 115-127
+  s_b3918a71142a3e::t_a3a35f774aecc7 1459
 tests/commit_tree_update_ref.rs
   s_f00ef7c0f45b07::t_a9242165dc8034 14,18,118-131,148,150-153
   s_f00ef7c0f45b07::t_bff56bf496e983 696-751
+  s_b3918a71142a3e::t_a3a35f774aecc7 695
 src/commands/daemon.rs
   s_f00ef7c0f45b07::t_ade2e37ae0fa33 273-277
 ---
@@ -36,6 +39,14 @@ src/commands/daemon.rs
   "base_commit_sha": "a2d5c12d2978d5acfc90ab02367500c29350ddbd",
   "prompts": {},
   "sessions": {
+    "s_b3918a71142a3e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "de268d2e-4705-4c20-86ca-d1dc04eda164",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Sasha Varlamov <sasha@sashavarlamov.com>"
+    },
     "s_f00ef7c0f45b07": {
       "agent_id": {
         "tool": "codex",
