@@ -949,6 +949,13 @@ pub struct GitIdentityResolution {
     pub identity: GitAuthorIdentity,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct GitConfigIdentityResolution {
+    pub raw_name: Option<String>,
+    pub raw_email: Option<String>,
+    pub identity: GitAuthorIdentity,
+}
+
 /// Parse `git var GIT_COMMITTER_IDENT` output into name and email.
 ///
 /// The output format is: `Name <email> unix-timestamp timezone`
@@ -991,9 +998,13 @@ pub fn parse_git_var_identity(output: &str) -> GitAuthorIdentity {
 }
 
 pub fn global_git_config_committer_identity() -> Result<GitAuthorIdentity, GitAiError> {
+    Ok(global_git_config_identity_resolution()?.identity)
+}
+
+pub fn global_git_config_identity_resolution() -> Result<GitConfigIdentityResolution, GitAiError> {
     let config =
         gix_config::File::from_globals().map_err(|e| GitAiError::GixError(e.to_string()))?;
-    Ok(git_author_identity_from_config(&config))
+    Ok(git_config_identity_resolution_from_config(&config))
 }
 
 pub fn current_git_committer_identity_resolution() -> GitIdentityResolution {
@@ -1002,19 +1013,27 @@ pub fn current_git_committer_identity_resolution() -> GitIdentityResolution {
     })
 }
 
-fn git_author_identity_from_config(config: &gix_config::File<'_>) -> GitAuthorIdentity {
-    let name = config
-        .string("user.name")
-        .map(|cow| cow.to_string())
+fn git_config_identity_resolution_from_config(
+    config: &gix_config::File<'_>,
+) -> GitConfigIdentityResolution {
+    let raw_name = config.string("user.name").map(|cow| cow.to_string());
+    let raw_email = config.string("user.email").map(|cow| cow.to_string());
+    let name = raw_name
+        .as_deref()
+        .map(ToOwned::to_owned)
         .filter(|s| !s.trim().is_empty())
         .map(|s| s.trim().to_string());
-    let email = config
-        .string("user.email")
-        .map(|cow| cow.to_string())
+    let email = raw_email
+        .as_deref()
+        .map(ToOwned::to_owned)
         .filter(|s| !s.trim().is_empty())
         .map(|s| s.trim().to_string());
 
-    GitAuthorIdentity { name, email }
+    GitConfigIdentityResolution {
+        raw_name,
+        raw_email,
+        identity: GitAuthorIdentity { name, email },
+    }
 }
 
 fn resolve_git_var_identity_with_args<F>(
@@ -1373,7 +1392,7 @@ impl Repository {
         resolve_git_var_identity_with_args(self.global_args_for_exec(), git_var, || {
             self.get_git_config_file()
                 .ok()
-                .map(|config| git_author_identity_from_config(&config))
+                .map(|config| git_config_identity_resolution_from_config(&config).identity)
                 .unwrap_or_default()
         })
     }

@@ -3,7 +3,8 @@ use crate::config;
 use crate::diagnostics::{DiagnosticCheckResult, GitDiagnosticTarget};
 use crate::git::find_repository_in_path;
 use crate::git::repository::{
-    GitAuthorIdentity, GitIdentityResolution, global_git_config_committer_identity,
+    GitAuthorIdentity, GitConfigIdentityResolution, GitIdentityResolution,
+    global_git_config_identity_resolution,
 };
 use crate::process_timeout::{TimedCommandOutput, run_command_with_timeout};
 use std::env;
@@ -405,7 +406,7 @@ struct GitDebugDiagnostics {
 }
 
 struct GitCommitterIdentityInfo {
-    global_config: Result<GitAuthorIdentity, String>,
+    global_config: Result<GitConfigIdentityResolution, String>,
     repository: RepositoryCommitterIdentity,
 }
 
@@ -415,7 +416,7 @@ enum RepositoryCommitterIdentity {
 }
 
 fn collect_git_committer_identity_info() -> GitCommitterIdentityInfo {
-    let global_config = global_git_config_committer_identity().map_err(|e| e.to_string());
+    let global_config = global_git_config_identity_resolution().map_err(|e| e.to_string());
     let repository = env::current_dir()
         .map_err(|e| e.to_string())
         .and_then(|cwd| find_repository_in_path(&cwd.to_string_lossy()).map_err(|e| e.to_string()))
@@ -434,7 +435,10 @@ fn append_git_committer_identity(out: &mut String, identity: &GitCommitterIdenti
     let _ = writeln!(out, "== Git Committer Identity ==");
     let _ = writeln!(out, "Global git config identity:");
     match &identity.global_config {
-        Ok(global) => append_git_author_identity(out, global, "  "),
+        Ok(global) => {
+            append_raw_git_config_identity(out, global, "  ");
+            append_git_author_identity(out, &global.identity, "  ");
+        }
         Err(err) => {
             let _ = writeln!(out, "  <error: {}>", err);
         }
@@ -454,6 +458,18 @@ fn append_git_committer_identity(out: &mut String, identity: &GitCommitterIdenti
             let _ = writeln!(out, "  <not in repository: {}>", err);
         }
     }
+}
+
+fn append_raw_git_config_identity(
+    out: &mut String,
+    identity: &GitConfigIdentityResolution,
+    prefix: &str,
+) {
+    let raw_name = identity.raw_name.as_deref().unwrap_or("<unset>");
+    let raw_email = identity.raw_email.as_deref().unwrap_or("<unset>");
+
+    let _ = writeln!(out, "{}Raw user.name: {}", prefix, raw_name);
+    let _ = writeln!(out, "{}Raw user.email: {}", prefix, raw_email);
 }
 
 fn append_git_author_identity(out: &mut String, identity: &GitAuthorIdentity, prefix: &str) {
