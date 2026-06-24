@@ -1121,12 +1121,9 @@ fn extract_metric_event_metadata(event_json: &str) -> Option<MetricEventMetadata
             attrs,
             attr_pos::EXTERNAL_PARENT_SESSION_ID,
         ),
-        external_event_id: sparse_object_string(attrs, attr_pos::EXTERNAL_EVENT_ID)
-            .or_else(|| legacy_external_event_id(event_kind, values)),
-        external_parent_event_id: sparse_object_string(attrs, attr_pos::EXTERNAL_PARENT_EVENT_ID)
-            .or_else(|| legacy_external_parent_event_id(event_kind, values)),
-        external_tool_use_id: sparse_object_string(attrs, attr_pos::EXTERNAL_TOOL_USE_ID)
-            .or_else(|| legacy_external_tool_use_id(event_kind, values)),
+        external_event_id: event_specific_external_event_id(event_kind, values),
+        external_parent_event_id: event_specific_external_parent_event_id(event_kind, values),
+        external_tool_use_id: event_specific_external_tool_use_id(event_kind, values),
     })
 }
 
@@ -1137,7 +1134,7 @@ fn sparse_object_string(object: Option<&Map<String, Value>>, pos: usize) -> Opti
         .map(ToString::to_string)
 }
 
-fn legacy_external_event_id(
+fn event_specific_external_event_id(
     event_kind: u16,
     values: Option<&Map<String, Value>>,
 ) -> Option<String> {
@@ -1150,7 +1147,7 @@ fn legacy_external_event_id(
     None
 }
 
-fn legacy_external_parent_event_id(
+fn event_specific_external_parent_event_id(
     event_kind: u16,
     values: Option<&Map<String, Value>>,
 ) -> Option<String> {
@@ -1163,7 +1160,7 @@ fn legacy_external_parent_event_id(
     None
 }
 
-fn legacy_external_tool_use_id(
+fn event_specific_external_tool_use_id(
     event_kind: u16,
     values: Option<&Map<String, Value>>,
 ) -> Option<String> {
@@ -1293,10 +1290,7 @@ mod tests {
                     "24":"session-1",
                     "25":"trace-1",
                     "26":"parent-session-1",
-                    "27":"external-parent-session-1",
-                    "28":"external-event-1",
-                    "29":"external-parent-event-1",
-                    "31":"external-tool-use-1"
+                    "27":"external-parent-session-1"
                 }}
             }}"#
         )
@@ -1593,7 +1587,7 @@ mod tests {
     }
 
     #[test]
-    fn test_insert_events_populates_all_event_metadata_from_common_attrs() {
+    fn test_insert_events_populates_existing_common_metadata_from_attrs() {
         let (mut db, _temp_dir) = create_test_db();
         let event_ts = days_ago(1);
         db.insert_events(&[event_json_with_all_common_metadata(event_ts, 5)])
@@ -1615,9 +1609,9 @@ mod tests {
                 tool: Some("codex".to_string()),
                 external_session_id: Some("external-session-1".to_string()),
                 external_parent_session_id: Some("external-parent-session-1".to_string()),
-                external_event_id: Some("external-event-1".to_string()),
-                external_parent_event_id: Some("external-parent-event-1".to_string()),
-                external_tool_use_id: Some("external-tool-use-1".to_string()),
+                external_event_id: None,
+                external_parent_event_id: None,
+                external_tool_use_id: None,
             }]
         );
     }
@@ -1653,10 +1647,11 @@ mod tests {
     }
 
     #[test]
-    fn test_insert_events_falls_back_to_legacy_value_external_ids() {
+    fn test_insert_events_populates_event_specific_external_ids() {
         let (mut db, _temp_dir) = create_test_db();
         let session_event_ts = days_ago(2);
-        let checkpoint_ts = days_ago(1);
+        let otel_trace_ts = days_ago(1);
+        let checkpoint_ts = unix_now().min(u32::MAX as u64) as u32;
         let events = vec![
             format!(
                 r#"{{
@@ -1664,6 +1659,14 @@ mod tests {
                     "e":5,
                     "v":{{"1":"legacy-event","2":"legacy-parent","3":"legacy-tool"}},
                     "a":{{"24":"session-from-attrs"}}
+                }}"#
+            ),
+            format!(
+                r#"{{
+                    "t":{otel_trace_ts},
+                    "e":6,
+                    "v":{{"1":"otel-event","2":"otel-parent","3":"otel-tool"}},
+                    "a":{{"25":"trace-from-attrs"}}
                 }}"#
             ),
             format!(
@@ -1691,6 +1694,17 @@ mod tests {
                     external_event_id: Some("legacy-event".to_string()),
                     external_parent_event_id: Some("legacy-parent".to_string()),
                     external_tool_use_id: Some("legacy-tool".to_string()),
+                },
+                MetricIdentifierRow {
+                    trace_id: Some("trace-from-attrs".to_string()),
+                    session_id: None,
+                    parent_session_id: None,
+                    tool: None,
+                    external_session_id: None,
+                    external_parent_session_id: None,
+                    external_event_id: Some("otel-event".to_string()),
+                    external_parent_event_id: Some("otel-parent".to_string()),
+                    external_tool_use_id: Some("otel-tool".to_string()),
                 },
                 MetricIdentifierRow {
                     trace_id: None,
@@ -1803,9 +1817,9 @@ mod tests {
                     tool: Some("codex".to_string()),
                     external_session_id: Some("external-session-1".to_string()),
                     external_parent_session_id: Some("external-parent-session-1".to_string()),
-                    external_event_id: Some("external-event-1".to_string()),
-                    external_parent_event_id: Some("external-parent-event-1".to_string()),
-                    external_tool_use_id: Some("external-tool-use-1".to_string()),
+                    external_event_id: None,
+                    external_parent_event_id: None,
+                    external_tool_use_id: None,
                 },
                 MetricIdentifierRow {
                     trace_id: None,
