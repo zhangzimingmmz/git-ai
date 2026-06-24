@@ -370,7 +370,7 @@ fn recovery_distance_to_call_window(timestamp_ns: u128, call: &BashCheckpointCal
         // Low-resolution filesystems can truncate mtimes to whole seconds.
         // Only grant start-side grace to timestamps that look truncated.
         if start_skew_ns >= BASH_RECOVERY_COARSE_TIMESTAMP_NS
-            || timestamp_ns % BASH_RECOVERY_COARSE_TIMESTAMP_NS != 0
+            || !timestamp_ns.is_multiple_of(BASH_RECOVERY_COARSE_TIMESTAMP_NS)
         {
             return None;
         }
@@ -827,13 +827,9 @@ mod tests {
             Some(3_000_000_000),
         )];
 
-        let selection = select_best_bash_candidate(
-            &candidates,
-            &[2_000_000_000],
-            &HashSet::new(),
-            "/repo",
-        )
-        .expect("expected coarse timestamp to match");
+        let selection =
+            select_best_bash_candidate(&candidates, &[2_000_000_000], &HashSet::new(), "/repo")
+                .expect("expected coarse timestamp to match");
 
         assert_eq!(selection.candidate.tool_use_id, "tool-coarse");
         assert_eq!(selection.distance_ns, 500_000_000);
