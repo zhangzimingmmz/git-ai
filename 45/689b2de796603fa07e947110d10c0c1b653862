@@ -1,6 +1,7 @@
 src/daemon/ref_cursor.rs
   s_dea92a44b3e7ab::t_b788e0a1532f34 8-10,1970-2017,2023-2043,2057-2097,2157-2164,2166-2173,2175-2185,2187-2188,2191-2238
   s_dea92a44b3e7ab::t_3b89768c7faa28 2018-2022,2098-2156
+  s_dea92a44b3e7ab::t_230cbfd569110a 11,2174
 src/daemon.rs
   s_dea92a44b3e7ab::t_7ef7f595130e82 2962
   s_dea92a44b3e7ab::t_4ff0344290ba71 8913-8915,8937-8939
@@ -75,6 +76,7 @@ src/daemon.rs
   s_dea92a44b3e7ab::t_6ec5e437934faa 4161
   s_dea92a44b3e7ab::t_1b5031ab9eb663 4654
   s_dea92a44b3e7ab::t_f6d9b3a1e2ca44 8610
+  s_dea92a44b3e7ab::t_e5796f4ac89c21 3229-3235
 src/git/sync_authorship.rs
   s_dea92a44b3e7ab::t_5cf5be57f2ef28 302-303
   s_dea92a44b3e7ab::t_0086463789e9b6 402-403
