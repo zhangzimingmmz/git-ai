@@ -12,7 +12,11 @@ use serde::{Deserialize, Serialize, Serializer};
 use crate::feature_flags::FeatureFlags;
 use crate::git::repository::Repository;
 use crate::mdm::utils::home_dir;
+#[cfg(windows)]
+use crate::utils::CREATE_NO_WINDOW;
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 #[cfg(any(test, feature = "test-support"))]
 use std::sync::RwLock;
 
@@ -1347,9 +1351,10 @@ fn resolve_git_path(file_cfg: &Option<FileConfig>) -> String {
     // 3) Windows-only: try `where.exe git.exe` as a PATH-based fallback
     #[cfg(windows)]
     {
-        if let Ok(output) = std::process::Command::new("where.exe")
-            .arg("git.exe")
-            .output()
+        let mut command = std::process::Command::new("where.exe");
+        command.creation_flags(CREATE_NO_WINDOW);
+
+        if let Ok(output) = command.arg("git.exe").output()
             && output.status.success()
         {
             let stdout = String::from_utf8_lossy(&output.stdout);

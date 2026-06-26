@@ -4,6 +4,11 @@ use std::process::{Command, Stdio};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::{Duration, Instant};
 
+#[cfg(windows)]
+use crate::utils::CREATE_NO_WINDOW;
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
 const OUTPUT_DRAIN_GRACE: Duration = Duration::from_millis(200);
 const OUTPUT_DRAIN_POLL: Duration = Duration::from_millis(10);
 
@@ -75,6 +80,11 @@ pub(crate) fn run_command_with_timeout(
     }
     if let Some(cwd) = cwd {
         command.current_dir(cwd);
+    }
+
+    #[cfg(windows)]
+    {
+        command.creation_flags(CREATE_NO_WINDOW);
     }
 
     let mut child = command
