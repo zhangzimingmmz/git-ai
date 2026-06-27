@@ -1,0 +1,19 @@
+tests/integration/post_commit_unit.rs
+  s_3d3a89f9044628::t_01e99ce3652a95 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "a47ff04dbc936c105530a399895270771f7a4bf5",
+  "prompts": {},
+  "sessions": {
+    "s_3d3a89f9044628": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_0fb8fb463ffelcmV5EAcda58zy",
+        "model": "unknown"
+      },
+      "human_author": "zzm <zhangzimingmz@gmail.com>"
+    }
+  }
+}
