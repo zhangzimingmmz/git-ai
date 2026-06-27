@@ -810,7 +810,11 @@ fn set_config_value(key: &str, value: &str, add_mode: bool) -> Result<(), String
                 if add_mode {
                     return Err("Cannot use --add with custom_attributes at top level. Use dot notation: custom_attributes.key".to_string());
                 }
-                file_config.custom_attributes = Some(parse_custom_attributes_object(value)?);
+                let attrs = parse_custom_attributes_object(value)?;
+                // Mirror the `author`/`git_ai_hooks` convention: an empty object
+                // is stored as None so the key is omitted from the config file
+                // rather than persisted as a redundant `{}`.
+                file_config.custom_attributes = if attrs.is_empty() { None } else { Some(attrs) };
                 crate::config::save_file_config(&file_config)?;
                 println!("[custom_attributes]: {}", value);
             }
@@ -1300,7 +1304,10 @@ fn unset_config_value(key: &str) -> Result<(), String> {
                     .to_string(),
             );
         }
-        let attr_name = &key_path[1];
+        // Trim to match the nested `set` path, which stores the trimmed name;
+        // otherwise an attribute set as `custom_attributes. team` (stored as
+        // `team`) could not be removed by the same dotted key.
+        let attr_name = key_path[1].trim();
         let mut attrs = file_config
             .custom_attributes
             .ok_or_else(|| format!("Config key not found: {}", key))?;
@@ -1437,8 +1444,12 @@ fn parse_git_ai_hooks_object(value: &str) -> Result<HashMap<String, Vec<String>>
 }
 
 /// Parse a JSON object of custom telemetry attributes.
-/// Accepts string/number/bool values (coerced to strings), mirroring how the
-/// `GIT_AI_CUSTOM_ATTRIBUTES` env var override is interpreted at config load time.
+///
+/// String/number/bool values are coerced to strings using the same rules as the
+/// `GIT_AI_CUSTOM_ATTRIBUTES` env var override (see `build_custom_attributes`).
+/// Unlike the env path, which silently drops non-scalar values, the CLI rejects
+/// them so a malformed `config set` fails loudly rather than persisting a
+/// partially-applied object.
 fn parse_custom_attributes_object(value: &str) -> Result<HashMap<String, String>, String> {
     let parsed: Value = serde_json::from_str(value)
         .map_err(|e| format!("Invalid JSON for custom_attributes: {}", e))?;

@@ -141,6 +141,48 @@ fn test_config_custom_attributes_nested_set_get_unset() {
 }
 
 #[test]
+fn test_config_custom_attributes_set_empty_object_is_omitted() {
+    let repo = TestRepo::new();
+
+    // Setting an empty object should normalize to "unset" (mirrors `author`),
+    // not persist a redundant `{}`.
+    repo.git_ai(&["config", "set", "custom_attributes", "{}"])
+        .expect("set empty custom_attributes");
+    assert_eq!(
+        get_json(&repo, "custom_attributes"),
+        Value::Object(serde_json::Map::new())
+    );
+
+    // The config file should not carry a `custom_attributes` key at all.
+    let config_path = repo.test_home_path().join(".git-ai").join("config.json");
+    if let Ok(contents) = std::fs::read_to_string(&config_path) {
+        let parsed: Value = serde_json::from_str(&contents).unwrap_or(Value::Null);
+        assert!(
+            parsed.get("custom_attributes").is_none(),
+            "empty custom_attributes should be omitted from config file, got: {contents}"
+        );
+    }
+}
+
+#[test]
+fn test_config_custom_attributes_nested_unset_trims_name() {
+    let repo = TestRepo::new();
+
+    // Set with a leading space in the attribute name; the set path trims it.
+    repo.git_ai(&["config", "set", "custom_attributes. team", "platform"])
+        .expect("set custom_attributes. team");
+    assert_eq!(
+        get_json(&repo, "custom_attributes.team"),
+        Value::String("platform".to_string())
+    );
+
+    // Unset with the same (untrimmed) dotted key must succeed symmetrically.
+    repo.git_ai(&["config", "unset", "custom_attributes. team"])
+        .expect("unset custom_attributes. team should match trimmed name");
+    assert_eq!(get_json(&repo, "custom_attributes.team"), Value::Null);
+}
+
+#[test]
 fn test_config_show_all_includes_new_keys() {
     let repo = TestRepo::new();
     let out = repo.git_ai(&["config"]).expect("show all config");
