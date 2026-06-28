@@ -603,9 +603,10 @@ fn get_config_value(key: &str) -> Result<(), String> {
                     .to_string(),
             );
         }
+        let attr_key = key_path[1].trim();
         let value = runtime_config
             .custom_attributes()
-            .get(&key_path[1])
+            .get(attr_key)
             .map(|v| Value::String(v.clone()))
             .unwrap_or(Value::Null);
         let json = serde_json::to_string_pretty(&value)

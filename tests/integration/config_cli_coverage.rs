@@ -176,6 +176,12 @@ fn test_config_custom_attributes_nested_unset_trims_name() {
         Value::String("platform".to_string())
     );
 
+    // Get with the same (untrimmed) dotted key must return the stored value.
+    assert_eq!(
+        get_json(&repo, "custom_attributes. team"),
+        Value::String("platform".to_string())
+    );
+
     // Unset with the same (untrimmed) dotted key must succeed symmetrically.
     repo.git_ai(&["config", "unset", "custom_attributes. team"])
         .expect("unset custom_attributes. team should match trimmed name");
