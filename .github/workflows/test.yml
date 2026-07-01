@@ -1,6 +1,7 @@
 name: Test
 
 permissions:
+  actions: read
   contents: read
 
 on:
@@ -332,11 +333,47 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check Ubuntu shards
+        env:
+          EXPECTED_JOBS: 3
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          JOB_PREFIX: 'Test on ubuntu-latest '
         run: |
-          if [ "${{ needs.test.result }}" != "success" ]; then
-            echo "One or more test matrix jobs failed"
-            exit 1
-          fi
+          set -euo pipefail
+          jobs_json=$(gh run view "$GITHUB_RUN_ID" --json jobs)
+          JOBS_JSON="$jobs_json" python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          expected_jobs = int(os.environ["EXPECTED_JOBS"])
+          job_prefix = os.environ["JOB_PREFIX"]
+          jobs = json.loads(os.environ["JOBS_JSON"])["jobs"]
+          matching_jobs = sorted(
+              [job for job in jobs if job["name"].startswith(job_prefix)],
+              key=lambda job: job["name"],
+          )
+
+          if len(matching_jobs) != expected_jobs:
+              print(
+                  f"Expected {expected_jobs} jobs with prefix {job_prefix!r}, "
+                  f"found {len(matching_jobs)}",
+                  file=sys.stderr,
+              )
+              for job in matching_jobs:
+                  print(f"  {job['name']}: {job['status']} / {job['conclusion']}")
+              sys.exit(1)
+
+          failed_jobs = [
+              job for job in matching_jobs if job["conclusion"] != "success"
+          ]
+          for job in matching_jobs:
+              print(f"{job['name']}: {job['status']} / {job['conclusion']}")
+
+          if failed_jobs:
+              print("One or more Ubuntu test shards failed", file=sys.stderr)
+              sys.exit(1)
+          PY
           echo "Ubuntu test shards completed successfully"
 
   macos-test-complete:
@@ -346,11 +383,47 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check macOS shards
+        env:
+          EXPECTED_JOBS: 5
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          JOB_PREFIX: 'Test on macos-latest '
         run: |
-          if [ "${{ needs.test.result }}" != "success" ]; then
-            echo "One or more test matrix jobs failed"
-            exit 1
-          fi
+          set -euo pipefail
+          jobs_json=$(gh run view "$GITHUB_RUN_ID" --json jobs)
+          JOBS_JSON="$jobs_json" python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          expected_jobs = int(os.environ["EXPECTED_JOBS"])
+          job_prefix = os.environ["JOB_PREFIX"]
+          jobs = json.loads(os.environ["JOBS_JSON"])["jobs"]
+          matching_jobs = sorted(
+              [job for job in jobs if job["name"].startswith(job_prefix)],
+              key=lambda job: job["name"],
+          )
+
+          if len(matching_jobs) != expected_jobs:
+              print(
+                  f"Expected {expected_jobs} jobs with prefix {job_prefix!r}, "
+                  f"found {len(matching_jobs)}",
+                  file=sys.stderr,
+              )
+              for job in matching_jobs:
+                  print(f"  {job['name']}: {job['status']} / {job['conclusion']}")
+              sys.exit(1)
+
+          failed_jobs = [
+              job for job in matching_jobs if job["conclusion"] != "success"
+          ]
+          for job in matching_jobs:
+              print(f"{job['name']}: {job['status']} / {job['conclusion']}")
+
+          if failed_jobs:
+              print("One or more macOS test shards failed", file=sys.stderr)
+              sys.exit(1)
+          PY
           echo "macOS test shards completed successfully"
 
   windows-test-complete:
@@ -360,11 +433,47 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check Windows shards
+        env:
+          EXPECTED_JOBS: 7
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          JOB_PREFIX: 'Test on windows-latest '
         run: |
-          if [ "${{ needs.test.result }}" != "success" ]; then
-            echo "One or more test matrix jobs failed"
-            exit 1
-          fi
+          set -euo pipefail
+          jobs_json=$(gh run view "$GITHUB_RUN_ID" --json jobs)
+          JOBS_JSON="$jobs_json" python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          expected_jobs = int(os.environ["EXPECTED_JOBS"])
+          job_prefix = os.environ["JOB_PREFIX"]
+          jobs = json.loads(os.environ["JOBS_JSON"])["jobs"]
+          matching_jobs = sorted(
+              [job for job in jobs if job["name"].startswith(job_prefix)],
+              key=lambda job: job["name"],
+          )
+
+          if len(matching_jobs) != expected_jobs:
+              print(
+                  f"Expected {expected_jobs} jobs with prefix {job_prefix!r}, "
+                  f"found {len(matching_jobs)}",
+                  file=sys.stderr,
+              )
+              for job in matching_jobs:
+                  print(f"  {job['name']}: {job['status']} / {job['conclusion']}")
+              sys.exit(1)
+
+          failed_jobs = [
+              job for job in matching_jobs if job["conclusion"] != "success"
+          ]
+          for job in matching_jobs:
+              print(f"{job['name']}: {job['status']} / {job['conclusion']}")
+
+          if failed_jobs:
+              print("One or more Windows test shards failed", file=sys.stderr)
+              sys.exit(1)
+          PY
           echo "Windows test shards completed successfully"
 
   test-ignored:
