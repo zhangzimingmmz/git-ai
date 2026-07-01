@@ -712,6 +712,46 @@ fn test_pull_rebase_via_alias_preserves_committed_ai_authorship() {
     ]);
 }
 
+#[test]
+fn test_pull_rebase_via_zero_arg_alias_and_git_config_preserves_committed_ai_authorship() {
+    // Regression: `git up` where `up = pull` and `pull.rebase=true`. The alias
+    // expands to `pull` with no explicit args, so the normalized invocation must
+    // still keep `pull` visible instead of falling back to the raw alias token.
+    let setup = setup_divergent_pull_test();
+    let local = setup.local;
+
+    local
+        .git(&["config", "alias.up", "pull"])
+        .expect("set alias.up should succeed");
+    local
+        .git(&["config", "pull.rebase", "true"])
+        .expect("set pull.rebase should succeed");
+
+    local.git(&["up"]).expect("aliased pull should succeed");
+
+    assert!(
+        local.read_file("upstream_change.txt").is_some(),
+        "Should have upstream_change.txt after aliased config-driven pull --rebase"
+    );
+
+    let new_head = local
+        .git(&["rev-parse", "HEAD"])
+        .expect("rev-parse should succeed")
+        .trim()
+        .to_string();
+
+    assert_ne!(
+        new_head, setup.local_ai_commit_sha,
+        "HEAD should have a new SHA after rebase"
+    );
+
+    let mut ai_file = local.filename("ai_feature.txt");
+    ai_file.assert_lines_and_blame(vec![
+        "AI generated feature line 1".ai(),
+        "AI generated feature line 2".ai(),
+    ]);
+}
+
 // =============================================================================
 // Pull --rebase --autostash with uncommitted changes
 // =============================================================================
@@ -1941,6 +1981,7 @@ crate::reuse_tests_in_worktree!(
     test_fast_forward_pull_without_local_changes,
     test_pull_rebase_preserves_committed_ai_authorship,
     test_pull_rebase_via_git_config_preserves_committed_ai_authorship,
+    test_pull_rebase_via_zero_arg_alias_and_git_config_preserves_committed_ai_authorship,
     test_pull_rebase_autostash_preserves_uncommitted_ai_attribution,
     test_pull_rebase_autostash_with_mixed_attribution,
     test_pull_rebase_autostash_via_git_config,
