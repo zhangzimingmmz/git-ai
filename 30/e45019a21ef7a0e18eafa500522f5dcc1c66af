@@ -1,0 +1,21 @@
+src/authorship/virtual_attribution.rs
+  s_2f13eba98e1355::t_7e1e8c62527744 1388,1392-1393,1461-1473,1475-1476,1517,1523,1544-1546,1553,1556,1577-1580,1583,1590-1592,1597-1601,1618-1619,3683-3695
+tests/integration/post_commit_unit.rs
+  s_2f13eba98e1355::t_b15d891fd68bb4 1,124-165
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.11",
+  "base_commit_sha": "30e45019a21ef7a0e18eafa500522f5dcc1c66af",
+  "prompts": {},
+  "sessions": {
+    "s_2f13eba98e1355": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f2bcf-cc1e-75b1-ab03-d42febfc9a3e",
+        "model": "gpt-5.5"
+      },
+      "human_author": "zhangzimingmmz <zhangzimingmmz@gmail.com>"
+    }
+  }
+}
