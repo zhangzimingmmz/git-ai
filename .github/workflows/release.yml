@@ -522,6 +522,7 @@ jobs:
           git push origin main
 
       - name: Trigger release channel update
+        if: github.repository == 'git-ai-project/git-ai'
         run: |
           curl -X POST \
             -H "Authorization: token ${{ secrets.RELEASE_CHANNEL_TOKEN }}" \
