@@ -1,0 +1,21 @@
+.github/workflows/release.yml
+  s_2f13eba98e1355::t_ac4905e76cd646 525
+.github/workflows/e2e-tests.yml
+  s_2f13eba98e1355::t_ac4905e76cd646 58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "6b2ffaec16b4c20c77f39abb50ed3623de171046",
+  "prompts": {},
+  "sessions": {
+    "s_2f13eba98e1355": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f2bcf-cc1e-75b1-ab03-d42febfc9a3e",
+        "model": "gpt-5.5"
+      },
+      "human_author": "zhangzimingmmz <zhangzimingmmz@gmail.com>"
+    }
+  }
+}
