@@ -1,0 +1,19 @@
+tests/integration/github_copilot_tools.rs
+  s_132334644c1cd7::t_164e7bf863bc48 109-197
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.11",
+  "base_commit_sha": "8571eeb342471358c609b3597d9036c5ef319d57",
+  "prompts": {},
+  "sessions": {
+    "s_132334644c1cd7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f3b7a-6efd-70f3-83b0-2849a1ac2544",
+        "model": "gpt-5.5"
+      },
+      "human_author": "zhangzimingmmz <zhangzimingmmz@gmail.com>"
+    }
+  }
+}
