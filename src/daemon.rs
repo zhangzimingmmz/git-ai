@@ -6531,11 +6531,6 @@ fn trace_listener_loop_actor(
             .name(local_socket_name(&trace_socket_path)?)
             .create_sync()
             .map_err(|e| GitAiError::Generic(format!("failed binding trace socket: {}", e)))?;
-        // Raise the receive buffer on the listener so accepted connections
-        // inherit the larger buffer as early as possible.
-        if let Err(error) = set_trace_listener_recv_buffer(&listener) {
-            tracing::debug!(%error, "trace listener recv buffer setup failed");
-        }
         set_socket_owner_only(&trace_socket_path)?;
         for stream in listener.incoming() {
             if coordinator.is_shutting_down() {
@@ -6544,8 +6539,9 @@ fn trace_listener_loop_actor(
             let Ok(stream) = stream else {
                 continue;
             };
-            // Re-apply on each accepted connection as a backstop in case the
-            // listener-inherited value was not honored on this platform.
+            // Raise the receive buffer on each accepted connection. Unlike TCP,
+            // a Unix-domain listener's SO_RCVBUF is not inherited by accepted
+            // connections, so this per-connection call is what takes effect.
             if let Err(error) = set_trace_socket_recv_buffer(&stream) {
                 tracing::debug!(%error, "trace connection recv buffer setup failed");
             }
@@ -7433,15 +7429,6 @@ fn set_trace_socket_recv_buffer(stream: &LocalSocketStream) -> io::Result<()> {
     match stream {
         LocalSocketStream::UdSocket(stream) => {
             set_socket_recv_buffer(stream, trace_socket_recv_buffer_bytes())
-        }
-    }
-}
-
-#[cfg(not(windows))]
-fn set_trace_listener_recv_buffer(listener: &LocalSocketListener) -> io::Result<()> {
-    match listener {
-        LocalSocketListener::UdSocket(listener) => {
-            set_socket_recv_buffer(listener, trace_socket_recv_buffer_bytes())
         }
     }
 }
