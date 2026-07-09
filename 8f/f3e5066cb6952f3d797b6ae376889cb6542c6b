@@ -1,0 +1,21 @@
+src/authorship/virtual_attribution.rs
+  s_0244aecd530f56::t_f5970f375c3b32 1464-1473,2274-2297,2350-2358,2365,2374-2383,2392-2405,2411-2413,2449-2484
+tests/integration/stats_unit.rs
+  s_0244aecd530f56::t_b935e057608058 63-91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "8ff3e5066cb6952f3d797b6ae376889cb6542c6b",
+  "prompts": {},
+  "sessions": {
+    "s_0244aecd530f56": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_0b99b6918ffes9X1EWe6NIpnsL",
+        "model": "unknown"
+      },
+      "human_author": "liguo <liguo2@lenovo.com>"
+    }
+  }
+}
