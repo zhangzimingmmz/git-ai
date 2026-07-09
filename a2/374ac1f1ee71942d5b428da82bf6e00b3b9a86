@@ -1,0 +1,22 @@
+src/authorship/virtual_attribution.rs
+  s_0244aecd530f56::t_e4f886ebff84a3 7
+  s_0244aecd530f56::t_045a63ce01d99b 8-9
+src/daemon/checkpoint.rs
+  s_0244aecd530f56::t_4a0d6d59d68ecc 8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "a2374ac1f1ee71942d5b428da82bf6e00b3b9a86",
+  "prompts": {},
+  "sessions": {
+    "s_0244aecd530f56": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_0b99b6918ffes9X1EWe6NIpnsL",
+        "model": "unknown"
+      },
+      "human_author": "liguo <liguo2@lenovo.com>"
+    }
+  }
+}
