@@ -1,0 +1,26 @@
+src/authorship/virtual_attribution.rs
+  s_0244aecd530f56::t_9dd667ff04eec0 7-9
+tests/integration/post_commit_unit.rs
+  s_0244aecd530f56::t_7ca2c09726e5bc 1,41-47
+  s_0244aecd530f56::t_670f7b54f0ef9c 48-50
+src/authorship/imara_diff_utils.rs
+  s_0244aecd530f56::t_b1f67b9f615bb6 267-279
+src/daemon/checkpoint.rs
+  s_0244aecd530f56::t_d29567181428ab 8,611,639,670,731
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "ca7a1f3aabc56048817070e7f6ad2cf6d960c425",
+  "prompts": {},
+  "sessions": {
+    "s_0244aecd530f56": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_0b99b6918ffes9X1EWe6NIpnsL",
+        "model": "unknown"
+      },
+      "human_author": "liguo <liguo2@lenovo.com>"
+    }
+  }
+}
