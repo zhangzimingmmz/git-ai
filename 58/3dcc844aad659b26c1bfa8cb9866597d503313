@@ -4,6 +4,7 @@ tests/integration/post_commit_unit.rs
   s_0244aecd530f56::t_670f7b54f0ef9c 48-50
   s_0244aecd530f56::t_7ca2c09726e5bc 1,41-47
   s_0244aecd530f56::t_aa4b0f636942ac 51-53
+  s_0244aecd530f56::t_b7eac148e7e3a5 74
 src/daemon/checkpoint.rs
   s_0244aecd530f56::t_d29567181428ab 8,616,646,677,738
 src/authorship/virtual_attribution.rs
