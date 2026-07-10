@@ -405,6 +405,7 @@ jobs:
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3
         with:
           tag_name: ${{ steps.release-meta.outputs.tag_name }}
+          target_commitish: ${{ github.sha }}
           name: ${{ steps.release-meta.outputs.release_name }}
           generate_release_notes: true
           body: |
