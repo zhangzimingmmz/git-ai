@@ -5162,3 +5162,17 @@ fn await_is_marked_beta_and_returns_promptly_when_idle() {
         "await should return promptly instead of waiting for the progress interval"
     );
 }
+
+#[test]
+fn await_rejects_zero_timeout() {
+    let repo = TestRepo::new_with_daemon_scope(DaemonTestScope::Dedicated);
+
+    let error = repo
+        .git_ai(&["await", "--timeout", "0"])
+        .expect_err("zero timeout should be rejected");
+
+    assert!(
+        error.contains("--timeout must be a positive integer"),
+        "await should report an input validation error: {error}"
+    );
+}

@@ -36,10 +36,13 @@ pub(crate) fn handle_await(args: &[String]) {
                     eprintln!("await: --timeout requires a value");
                     std::process::exit(1);
                 });
-                timeout_secs = value.parse::<u64>().unwrap_or_else(|_| {
-                    eprintln!("await: --timeout must be a positive integer");
-                    std::process::exit(1);
-                });
+                timeout_secs = match value.parse::<u64>() {
+                    Ok(value) if value > 0 => value,
+                    _ => {
+                        eprintln!("await: --timeout must be a positive integer");
+                        std::process::exit(1);
+                    }
+                };
             }
             "--help" | "-h" | "help" => {
                 print_usage();
