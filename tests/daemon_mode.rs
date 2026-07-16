@@ -5047,24 +5047,23 @@ fn daemon_self_heals_after_socket_deletion() {
 }
 
 #[test]
-#[serial]
 fn await_waits_for_metrics_and_notes_flush() {
     let mut mock_api = MockApiServer::start();
-    let _api_base_url = ScopedEnvVar::set("GIT_AI_API_BASE_URL", mock_api.base_url());
-    let _api_key = ScopedEnvVar::set("GIT_AI_API_KEY", "test-api-key");
-    let _notes_backend_kind = ScopedEnvVar::set("GIT_AI_NOTES_BACKEND_KIND", "http");
-    let _notes_backend_url = ScopedEnvVar::set("GIT_AI_NOTES_BACKEND_URL", mock_api.base_url());
 
     // Metrics recording is gated in test builds; point it at an isolated DB so
     // post-commit metric events actually get stored and flushed.
     let metrics_db_path =
         std::env::temp_dir().join(format!("git-ai-test-metrics-{}.db", std::process::id()));
-    let _metrics_db_path = ScopedEnvVar::set(
-        "GIT_AI_TEST_METRICS_DB_PATH",
-        metrics_db_path.to_str().unwrap(),
-    );
-
-    let mut repo = TestRepo::new_with_daemon_scope(DaemonTestScope::Dedicated);
+    let mut repo = TestRepo::new_with_daemon_env(&[
+        ("GIT_AI_API_BASE_URL", mock_api.base_url()),
+        ("GIT_AI_API_KEY", "test-api-key"),
+        ("GIT_AI_NOTES_BACKEND_KIND", "http"),
+        ("GIT_AI_NOTES_BACKEND_URL", mock_api.base_url()),
+        (
+            "GIT_AI_TEST_METRICS_DB_PATH",
+            metrics_db_path.to_str().unwrap(),
+        ),
+    ]);
     repo.patch_git_ai_config(|patch| {
         patch.exclude_prompts_in_repositories = Some(vec![]);
         patch.prompt_storage = Some("default".to_string());
