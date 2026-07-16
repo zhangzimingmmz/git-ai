@@ -462,13 +462,13 @@ impl NotesDatabase {
 
     // ----- Read operations -----
 
-    /// Count notes that have not been synced to the remote backend.
+    /// Count unsynced notes that have not exhausted their upload attempts.
     pub fn count_pending_syncable(&self) -> Result<usize, GitAiError> {
-        let count: i64 =
-            self.conn
-                .query_row("SELECT COUNT(*) FROM notes WHERE synced = 0", [], |row| {
-                    row.get(0)
-                })?;
+        let count: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM notes WHERE synced = 0 AND attempts < 6",
+            [],
+            |row| row.get(0),
+        )?;
         Ok(count as usize)
     }
 
@@ -777,6 +777,35 @@ mod tests {
             batch.is_empty(),
             "cache_synced_notes rows must not appear in dequeue_pending"
         );
+    }
+
+    #[test]
+    fn test_count_pending_syncable_excludes_only_permanent_failures() {
+        let (mut db, _tmp) = create_test_db();
+
+        for sha in ["ready", "backoff", "processing", "permanent"] {
+            db.upsert_note(sha, "content").unwrap();
+        }
+        db.conn
+            .execute(
+                "UPDATE notes SET attempts = 1, next_retry_at = ?1 WHERE commit_sha = 'backoff'",
+                params![unix_now() + 3_600],
+            )
+            .unwrap();
+        db.conn
+            .execute(
+                "UPDATE notes SET processing_started_at = ?1 WHERE commit_sha = 'processing'",
+                params![unix_now()],
+            )
+            .unwrap();
+        db.conn
+            .execute(
+                "UPDATE notes SET attempts = 6 WHERE commit_sha = 'permanent'",
+                [],
+            )
+            .unwrap();
+
+        assert_eq!(db.count_pending_syncable().unwrap(), 3);
     }
 
     // --- cache_synced_notes ---
