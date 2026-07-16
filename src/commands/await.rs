@@ -4,7 +4,7 @@
 //! flushing before the process exits. This is useful in cloud sandboxes where
 //! the container may be torn down immediately after a build step.
 
-use crate::daemon::{ControlRequest, send_control_request};
+use crate::daemon::{ControlRequest, ControlResponse, send_control_request};
 use serde::Deserialize;
 use std::thread;
 use std::time::Duration;
@@ -93,14 +93,7 @@ pub(crate) fn handle_await(args: &[String]) {
     };
 
     if !response.ok {
-        let message = response
-            .data
-            .and_then(|v| {
-                v.get("message")
-                    .and_then(|m| m.as_str())
-                    .map(|s| s.to_string())
-            })
-            .unwrap_or_else(|| "background service returned an error".to_string());
+        let message = response_error_message(&response);
         eprintln!("await: {}", message);
         std::process::exit(1);
     }
@@ -135,6 +128,13 @@ pub(crate) fn handle_await(args: &[String]) {
     eprintln!("await: background service finished");
 }
 
+fn response_error_message(response: &ControlResponse) -> &str {
+    response
+        .error
+        .as_deref()
+        .unwrap_or("background service returned an error")
+}
+
 fn print_usage() {
     eprintln!("Usage: git-ai await [--timeout <seconds>]");
     eprintln!(
@@ -147,4 +147,16 @@ fn print_usage() {
         DEFAULT_TIMEOUT_SECONDS
     );
     eprintln!("  -h, --help           Show this help");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn await_reports_daemon_error_message() {
+        let response = ControlResponse::err("telemetry flush failed");
+
+        assert_eq!(response_error_message(&response), "telemetry flush failed");
+    }
 }
