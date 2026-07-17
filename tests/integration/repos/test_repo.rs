@@ -491,6 +491,10 @@ impl DaemonProcess {
 
 fn configure_test_home_env(command: &mut Command, test_home: &Path) {
     command.env("HOME", test_home);
+    command.env(
+        "GIT_AI_TEST_NOTES_DB_PATH",
+        test_home.join(".git-ai").join("internal").join("notes-db"),
+    );
     command.env("GIT_CONFIG_GLOBAL", test_home.join(".gitconfig"));
     // Redirect XDG_CONFIG_HOME so git does not read the real user's
     // $XDG_CONFIG_HOME/git/config (which may contain filter drivers,
@@ -3634,6 +3638,24 @@ pub fn get_binary_path() -> &'static PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_configure_test_home_env_isolates_notes_database() {
+        let test_home = PathBuf::from("isolated-test-home");
+        let mut command = Command::new("git");
+
+        configure_test_home_env(&mut command, &test_home);
+
+        let notes_db_path = command
+            .get_envs()
+            .find(|(key, _)| *key == std::ffi::OsStr::new("GIT_AI_TEST_NOTES_DB_PATH"))
+            .and_then(|(_, value)| value)
+            .map(PathBuf::from);
+        assert_eq!(
+            notes_db_path,
+            Some(test_home.join(".git-ai").join("internal").join("notes-db"))
+        );
+    }
 
     #[test]
     fn test_normalize_test_git_ai_checkpoint_args_inserts_separator_for_direct_file() {
